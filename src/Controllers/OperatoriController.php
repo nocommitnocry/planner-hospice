@@ -164,6 +164,8 @@ final class OperatoriController extends BaseController
             'id_categoria'             => $request->post('id_categoria'),
             'id_setting'               => $request->post('id_setting'),
             'ore_contrattuali_mensili' => $request->post('ore_contrattuali_mensili'),
+            'data_assunzione'          => $request->post('data_assunzione'),
+            'data_cessazione'          => $request->post('data_cessazione'),
             'email'                    => $request->post('email'),
             'telefono'                 => $request->post('telefono'),
             'note'                     => $request->post('note'),

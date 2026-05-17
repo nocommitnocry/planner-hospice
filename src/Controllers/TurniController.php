@@ -25,10 +25,10 @@ use PDOException;
  * - Tutte le mutazioni richiedono che il piano sia in stato 'bozza'. Per
  *   modificare un piano pubblicato l'utente lo riporta prima in bozza
  *   (vedi PianiTurnoController::unpublish).
- * - L'operatore deve essere uno di quelli "fotografati" alla creazione del
- *   piano: in pratica deve esistere un record `saldo_ore` per (operatore,
- *   anno_piano, mese_piano). Così non si introducono nel piano operatori
- *   aggiunti dopo, senza saldo iniziale.
+ * - L'operatore deve essere incluso nel piano: deve esistere una riga in
+ *   `piano_operatori` per (id_piano, id_operatore). Comprende sia gli operatori
+ *   inclusi automaticamente alla creazione (di casa nel setting, in servizio nel
+ *   mese) sia gli aggiunti in itinere — anche cross-setting (sessione 4-ter).
  * - La data del turno deve cadere nel mese del piano.
  * - Operatore + data sono univoci a livello DB (UNIQUE su `turni`). In edit
  *   forniamo solo modifica di tipo turno e note: per cambiare giorno o
@@ -288,7 +288,7 @@ final class TurniController extends BaseController
      * Ritorna null se ok, altrimenti il messaggio di errore.
      *
      * Dalla 4-ter l'appartenenza è tracciata in `piano_operatori`: include
-     * sia i fotografati dalla create che gli aggiunti manualmente in itinere
+     * sia gli inclusi automaticamente dalla create che gli aggiunti in itinere
      * (anche cross-setting).
      *
      * @param array<string,mixed> $piano

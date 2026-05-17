@@ -21,7 +21,7 @@ use PDOException;
  * Mutazioni manuali sui saldi (sessione 4-ter).
  *
  * Tre azioni utente:
- *  1. Aggiungere al piano un operatore non fotografato (assunto infra-mese,
+ *  1. Aggiungere al piano un operatore non incluso alla creazione (assunto infra-mese,
  *     in itinere dall'altro setting, doppio ruolo): scelta operatore, ore_dovute,
  *     saldo_progressivo iniziale, nota obbligatoria.
  *  2. Modificare il saldo di un operatore già nel piano (ore_dovute per
@@ -351,7 +351,7 @@ final class SaldiController extends BaseController
             return $this->redirect(
                 "/piani-turno/{$idPiano}",
                 'error',
-                'Si possono rimuovere solo gli operatori aggiunti manualmente in itinere. Gli operatori fotografati dalla creazione restano legati al piano.',
+                'Si possono rimuovere solo gli operatori aggiunti in itinere. Gli operatori inclusi alla creazione del piano restano legati: per toglierli elimina e ricrea il piano.',
             );
         }
         if ($this->pianoOperatori->countTurniOperatoreInPiano($idPiano, $idOp) > 0) {

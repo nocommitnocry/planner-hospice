@@ -7,8 +7,8 @@ namespace App\Models;
  * Appartenenza esplicita di un operatore a un piano turno.
  *
  * La riga viene creata:
- *  - dalla create del piano per ogni operatore "fotografato" (di casa nel
- *    setting, in servizio nel mese): `aggiunto_manualmente = 0`;
+ *  - dalla create del piano per ogni operatore incluso automaticamente (di casa
+ *    nel setting, in servizio nel mese): `aggiunto_manualmente = 0`;
  *  - dall'azione "Aggiungi operatore al piano" (sessione 4-ter) per operatori
  *    in itinere — anche cross-setting: `aggiunto_manualmente = 1`.
  *
