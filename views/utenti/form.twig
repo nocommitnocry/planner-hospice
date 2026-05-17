@@ -1,0 +1,170 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ titolo }} &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">{{ titolo }}</h1>
+            <a href="{{ url('/utenti') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        {% if isSelf %}
+            <div class="alert alert-info small">
+                Stai modificando il tuo profilo. Ruolo e stato attivo sono bloccati per evitare di toglierti l'accesso.
+                Per cambiare la password usa la voce «Cambia password» nel menu utente.
+            </div>
+        {% endif %}
+
+        {% set ruolo_default = old_input.ruolo ?? utente.ruolo ?? 'visualizzatore' %}
+        {% set attivo_default = (old_input is iterable and old_input.attivo is defined)
+            ? old_input.attivo in ['1','on','true']
+            : (utente.attivo ?? 1) %}
+
+        <form method="post" action="{{ url(action) }}" autocomplete="off" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                    <input type="text" id="username" name="username" maxlength="50"
+                           class="form-control{% if form_errors.username %} is-invalid{% endif %}"
+                           value="{{ old_input.username ?? utente.username ?? '' }}" required autofocus
+                           autocomplete="off">
+                    {% if form_errors.username %}
+                        <div class="invalid-feedback">{{ form_errors.username|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="ruolo" class="form-label">Ruolo <span class="text-danger">*</span></label>
+                    <select id="ruolo" name="ruolo"
+                            class="form-select{% if form_errors.ruolo %} is-invalid{% endif %}"
+                            required {% if isSelf %}disabled{% endif %}>
+                        <option value="admin" {% if ruolo_default == 'admin' %}selected{% endif %}>admin</option>
+                        <option value="caposala" {% if ruolo_default == 'caposala' %}selected{% endif %}>caposala</option>
+                        <option value="visualizzatore" {% if ruolo_default == 'visualizzatore' %}selected{% endif %}>visualizzatore</option>
+                    </select>
+                    {# Se disabled non viene submittato: lo ripristino in hidden #}
+                    {% if isSelf %}
+                        <input type="hidden" name="ruolo" value="admin">
+                    {% endif %}
+                    {% if form_errors.ruolo %}
+                        <div class="invalid-feedback">{{ form_errors.ruolo|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="nome" class="form-label">Nome <span class="text-danger">*</span></label>
+                    <input type="text" id="nome" name="nome" maxlength="100"
+                           class="form-control{% if form_errors.nome %} is-invalid{% endif %}"
+                           value="{{ old_input.nome ?? utente.nome ?? '' }}" required>
+                    {% if form_errors.nome %}
+                        <div class="invalid-feedback">{{ form_errors.nome|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="cognome" class="form-label">Cognome <span class="text-danger">*</span></label>
+                    <input type="text" id="cognome" name="cognome" maxlength="100"
+                           class="form-control{% if form_errors.cognome %} is-invalid{% endif %}"
+                           value="{{ old_input.cognome ?? utente.cognome ?? '' }}" required>
+                    {% if form_errors.cognome %}
+                        <div class="invalid-feedback">{{ form_errors.cognome|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" id="email" name="email" maxlength="150"
+                           class="form-control{% if form_errors.email %} is-invalid{% endif %}"
+                           value="{{ old_input.email ?? utente.email ?? '' }}">
+                    {% if form_errors.email %}
+                        <div class="invalid-feedback">{{ form_errors.email|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="id_setting" class="form-label">Setting di default <span class="text-muted small">(opzionale)</span></label>
+                    <select id="id_setting" name="id_setting"
+                            class="form-select{% if form_errors.id_setting %} is-invalid{% endif %}">
+                        {% set set_sel = (old_input is iterable and old_input.id_setting is defined) ? old_input.id_setting : (utente.id_setting ?? '') %}
+                        <option value="" {% if set_sel == '' or set_sel is null %}selected{% endif %}>— Nessuno (utente globale) —</option>
+                        {% for s in settings %}
+                            <option value="{{ s.id }}" {% if set_sel == s.id %}selected{% endif %}>{{ s.nome }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_setting %}
+                        <div class="invalid-feedback">{{ form_errors.id_setting|first }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Filtro UX di default (es. caposala = setting della propria struttura).
+                        Non è un vincolo di scrittura: chi ha i permessi può comunque operare su entrambi i piani.
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="attivo" name="attivo" value="1"
+                               {% if attivo_default %}checked{% endif %} {% if isSelf %}disabled{% endif %}>
+                        <label class="form-check-label" for="attivo">Utente attivo (può accedere)</label>
+                    </div>
+                    {% if isSelf %}
+                        <input type="hidden" name="attivo" value="1">
+                    {% endif %}
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <fieldset>
+                <legend class="h5">
+                    Password
+                    {% if utente %}
+                        <small class="text-muted fs-6">— lascia vuoto per non modificarla</small>
+                    {% endif %}
+                </legend>
+
+                {% if utente and not isSelf %}
+                    <p class="small text-muted">
+                        Stai impostando una password per un altro utente. Comunicagliela su un canale sicuro:
+                        all'accesso potrà cambiarla dal menu «Cambia password».
+                    </p>
+                {% endif %}
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="password" class="form-label">
+                            Password {% if not utente %}<span class="text-danger">*</span>{% endif %}
+                        </label>
+                        <input type="password" id="password" name="password"
+                               class="form-control{% if form_errors.password %} is-invalid{% endif %}"
+                               autocomplete="new-password"
+                               {% if not utente %}required{% endif %}>
+                        {% if form_errors.password %}
+                            <div class="invalid-feedback">{{ form_errors.password|first }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="password_confirm" class="form-label">Conferma password</label>
+                        <input type="password" id="password_confirm" name="password_confirm"
+                               class="form-control{% if form_errors.password_confirm %} is-invalid{% endif %}"
+                               autocomplete="new-password"
+                               {% if not utente %}required{% endif %}>
+                        {% if form_errors.password_confirm %}
+                            <div class="invalid-feedback">{{ form_errors.password_confirm|first }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </fieldset>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url('/utenti') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

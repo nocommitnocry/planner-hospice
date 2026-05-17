@@ -1,0 +1,88 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Utenti applicativi &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Utenti applicativi</h1>
+    <a href="{{ url('/utenti/create') }}" class="btn btn-primary">+ Nuovo utente</a>
+</div>
+
+<p class="text-muted small">
+    Sono le persone che possono <strong>accedere al sistema</strong>. Distinte dagli «operatori»,
+    che sono il personale dell'hospice oggetto della pianificazione (un operatore può anche non
+    avere un account).
+</p>
+
+{% if utenti|length == 0 %}
+    <div class="alert alert-info">Nessun utente.</div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Nome e cognome</th>
+                    <th>Email</th>
+                    <th>Ruolo</th>
+                    <th>Setting</th>
+                    <th class="text-center">Stato</th>
+                    <th>Ultimo accesso</th>
+                    <th style="width:14rem" class="text-end">Azioni</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in utenti %}
+                    <tr class="{% if not u.attivo %}text-muted{% endif %}">
+                        <td>
+                            <strong>{{ u.username }}</strong>
+                            {% if u.id == currentUserId %}
+                                <span class="badge bg-info text-dark ms-1">tu</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ u.nome }} {{ u.cognome }}</td>
+                        <td class="small">{{ u.email|default('—') }}</td>
+                        <td>
+                            {% if u.ruolo == 'admin' %}<span class="badge bg-danger">admin</span>
+                            {% elseif u.ruolo == 'caposala' %}<span class="badge bg-primary">caposala</span>
+                            {% else %}<span class="badge bg-secondary">visualizzatore</span>{% endif %}
+                        </td>
+                        <td class="small">
+                            {% if u.setting_nome %}
+                                <span class="badge bg-light text-dark border">{{ u.setting_nome }}</span>
+                            {% else %}
+                                <span class="text-muted">globale</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if u.attivo %}
+                                <span class="badge bg-success">attivo</span>
+                            {% else %}
+                                <span class="badge bg-secondary">disattivato</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-muted">
+                            {{ u.ultimo_accesso ? format_date(u.ultimo_accesso, 'd/m/Y H:i') : 'mai' }}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url('/utenti/' ~ u.id ~ '/edit') }}"
+                               class="btn btn-sm btn-outline-secondary">Modifica</a>
+                            {% if u.id != currentUserId %}
+                                <form method="post" action="{{ url('/utenti/' ~ u.id ~ '/delete') }}"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Eliminare l\'utente «{{ u.username }}»? L\'azione è irreversibile.');">
+                                    {{ csrf_field() }}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
+                                </form>
+                            {% else %}
+                                <button class="btn btn-sm btn-outline-danger" disabled
+                                        title="Non puoi eliminare te stesso">Elimina</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Nuovo piano turno &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">Nuovo piano turno</h1>
+            <a href="{{ url('/piani-turno') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        <div class="alert alert-info small mb-4">
+            Verrà creato un piano vuoto in stato <strong>bozza</strong> per il periodo scelto.
+            I saldi ore iniziali saranno generati automaticamente per ogni operatore attivo
+            (ore dovute = ore contrattuali mensili dell'operatore).
+        </div>
+
+        <form method="post" action="{{ url('/piani-turno') }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="anno" class="form-label">Anno <span class="text-danger">*</span></label>
+                    <input type="number" id="anno" name="anno" min="2020" max="2100"
+                           class="form-control{% if form_errors.anno %} is-invalid{% endif %}"
+                           value="{{ old_input.anno ?? annoCorrente }}" required autofocus>
+                    {% if form_errors.anno %}
+                        <div class="invalid-feedback">{{ form_errors.anno|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="mese" class="form-label">Mese <span class="text-danger">*</span></label>
+                    <select id="mese" name="mese"
+                            class="form-select{% if form_errors.mese %} is-invalid{% endif %}" required>
+                        {% set mese_sel = old_input.mese ?? meseCorrente %}
+                        {% for n, nome in mesi %}
+                            <option value="{{ n }}" {% if mese_sel == n %}selected{% endif %}>{{ nome }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.mese %}
+                        <div class="invalid-feedback">{{ form_errors.mese|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label for="id_setting" class="form-label">Setting <span class="text-danger">*</span></label>
+                    <select id="id_setting" name="id_setting"
+                            class="form-select{% if form_errors.id_setting %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% set set_sel = old_input.id_setting ?? settingDefault ?? null %}
+                        {% for s in settings %}
+                            <option value="{{ s.id }}" {% if set_sel == s.id %}selected{% endif %}>{{ s.nome }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_setting %}
+                        <div class="invalid-feedback">{{ form_errors.id_setting|first }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Per lo stesso mese possono coesistere due piani (uno per setting). Verranno
+                        fotografati come saldi iniziali solo gli operatori "di casa" nel setting scelto.
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <label for="nome" class="form-label">
+                        Nome piano <span class="text-muted small">(opzionale)</span>
+                    </label>
+                    <input type="text" id="nome" name="nome" maxlength="100"
+                           class="form-control{% if form_errors.nome %} is-invalid{% endif %}"
+                           value="{{ old_input.nome ?? '' }}"
+                           placeholder="es. Piano standard, Piano festività…">
+                    {% if form_errors.nome %}
+                        <div class="invalid-feedback">{{ form_errors.nome|first }}</div>
+                    {% endif %}
+                    <div class="form-text">Se vuoto verrà mostrato solo il periodo.</div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url('/piani-turno') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Crea piano</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,137 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ titolo }} &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">{{ titolo }}</h1>
+            <a href="{{ url('/operatori') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        {% set attivo_default = (old_input is iterable and old_input.attivo is defined)
+            ? old_input.attivo in ['1','on','true']
+            : (operatore.attivo ?? 1) %}
+
+        <form method="post" action="{{ url(action) }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="cognome" class="form-label">Cognome <span class="text-danger">*</span></label>
+                    <input type="text" id="cognome" name="cognome" maxlength="100"
+                           class="form-control{% if form_errors.cognome %} is-invalid{% endif %}"
+                           value="{{ old_input.cognome ?? operatore.cognome ?? '' }}" required autofocus>
+                    {% if form_errors.cognome %}
+                        <div class="invalid-feedback">{{ form_errors.cognome|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="nome" class="form-label">Nome <span class="text-danger">*</span></label>
+                    <input type="text" id="nome" name="nome" maxlength="100"
+                           class="form-control{% if form_errors.nome %} is-invalid{% endif %}"
+                           value="{{ old_input.nome ?? operatore.nome ?? '' }}" required>
+                    {% if form_errors.nome %}
+                        <div class="invalid-feedback">{{ form_errors.nome|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="id_categoria" class="form-label">Categoria <span class="text-danger">*</span></label>
+                    <select id="id_categoria" name="id_categoria"
+                            class="form-select{% if form_errors.id_categoria %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% for c in categorie %}
+                            {% set selected_id = old_input.id_categoria ?? operatore.id_categoria ?? null %}
+                            <option value="{{ c.id }}" {% if selected_id == c.id %}selected{% endif %}>
+                                {{ c.nome }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_categoria %}
+                        <div class="invalid-feedback">{{ form_errors.id_categoria|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="id_setting" class="form-label">Setting di casa <span class="text-danger">*</span></label>
+                    <select id="id_setting" name="id_setting"
+                            class="form-select{% if form_errors.id_setting %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% for s in settings %}
+                            {% set selected_set = old_input.id_setting ?? operatore.id_setting ?? null %}
+                            <option value="{{ s.id }}" {% if selected_set == s.id %}selected{% endif %}>
+                                {{ s.nome }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_setting %}
+                        <div class="invalid-feedback">{{ form_errors.id_setting|first }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Reparto di appartenenza. Cambiarlo equivale a uno spostamento lungo (mesi/anni).
+                        Le sostituzioni brevi vanno gestite assegnando turni nel piano dell'altro setting,
+                        senza modificare questo campo.
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <label for="ore_contrattuali_mensili" class="form-label">
+                        Ore contrattuali mensili <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" id="ore_contrattuali_mensili" name="ore_contrattuali_mensili"
+                           step="0.01" min="0" max="999.99"
+                           class="form-control{% if form_errors.ore_contrattuali_mensili %} is-invalid{% endif %}"
+                           value="{{ old_input.ore_contrattuali_mensili ?? operatore.ore_contrattuali_mensili ?? '165.00' }}"
+                           required>
+                    {% if form_errors.ore_contrattuali_mensili %}
+                        <div class="invalid-feedback">{{ form_errors.ore_contrattuali_mensili|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-7">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" id="email" name="email" maxlength="150"
+                           class="form-control{% if form_errors.email %} is-invalid{% endif %}"
+                           value="{{ old_input.email ?? operatore.email ?? '' }}">
+                    {% if form_errors.email %}
+                        <div class="invalid-feedback">{{ form_errors.email|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-5">
+                    <label for="telefono" class="form-label">Telefono</label>
+                    <input type="text" id="telefono" name="telefono" maxlength="30"
+                           class="form-control{% if form_errors.telefono %} is-invalid{% endif %}"
+                           value="{{ old_input.telefono ?? operatore.telefono ?? '' }}">
+                    {% if form_errors.telefono %}
+                        <div class="invalid-feedback">{{ form_errors.telefono|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label for="note" class="form-label">Note</label>
+                    <textarea id="note" name="note" rows="3" class="form-control">{{ old_input.note ?? operatore.note ?? '' }}</textarea>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="attivo" name="attivo" value="1"
+                               {% if attivo_default %}checked{% endif %}>
+                        <label class="form-check-label" for="attivo">
+                            Operatore attivo (mostrato nelle liste per la pianificazione)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url('/operatori') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

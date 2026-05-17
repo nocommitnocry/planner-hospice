@@ -1,0 +1,119 @@
+/*
+ * Stili applicativi propri. Bootstrap 5 viene caricato separatamente.
+ * Mantenere questo file piccolo e leggibile.
+ */
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1 0 auto;
+}
+
+footer {
+    flex-shrink: 0;
+}
+
+/* Login: centra verticalmente la card senza rompere la grid Bootstrap.
+   IMPORTANTE: usare flex-direction: column, altrimenti il .row figlio
+   collassa al min-content del .card e tutto il testo va a capo. */
+.bg-light main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Badge per ruoli */
+.badge.bg-light.text-dark {
+    font-weight: 500;
+    font-size: 0.75em;
+    text-transform: capitalize;
+}
+
+/* Calendario piano turno */
+.calendario-piano th,
+.calendario-piano td {
+    min-width: 2.2rem;
+    padding: 0.25rem 0.35rem;
+    vertical-align: middle;
+}
+.calendario-piano .op-col {
+    min-width: 14rem;
+    white-space: nowrap;
+    position: sticky;
+    left: 0;
+    background-color: #fff;
+    z-index: 1;
+}
+.calendario-piano thead th {
+    background-color: #f8f9fa;
+}
+.calendario-piano .weekend {
+    background-color: #fafafa;
+}
+
+/* Celle interattive del calendario (sessione 4) */
+.calendario-piano .cella-turno {
+    padding: 0;
+}
+.calendario-piano .cella-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.25rem 0.35rem;
+    min-height: 1.8rem;
+    font-weight: 600;
+}
+.calendario-piano .cella-link:hover {
+    outline: 2px solid #0d6efd;
+    outline-offset: -2px;
+}
+.calendario-piano .cella-vuota {
+    color: #cccccc;
+    font-weight: 300;
+}
+
+/* Griglia di selezione tipo turno nel form */
+.tipi-turno-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+    gap: 0.5rem;
+}
+.tipo-turno-opzione {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem;
+    border: 2px solid transparent;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);
+}
+.tipo-turno-opzione input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.tipo-turno-opzione .codice {
+    font-weight: 700;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+.tipo-turno-opzione .descrizione {
+    color: #444;
+    margin-top: 0.25rem;
+    text-align: center;
+}
+.tipo-turno-opzione:hover {
+    border-color: #6c757d;
+}
+.tipo-turno-opzione.selected,
+.tipo-turno-opzione:has(input[type="radio"]:checked) {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13,110,253,.25);
+}

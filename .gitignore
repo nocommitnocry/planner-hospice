@@ -1,0 +1,36 @@
+# Dipendenze
+/vendor/
+/node_modules/
+
+# Configurazione locale
+.env
+.env.local
+.env.*.local
+
+# Storage runtime
+/storage/logs/*
+/storage/cache/*
+/storage/uploads/*
+!/storage/logs/.gitkeep
+!/storage/cache/.gitkeep
+!/storage/uploads/.gitkeep
+
+# Asset distribuiti (Bootstrap self-hosted) - vedi public/css/README
+# Mantenere committati: indicare qui se cambia strategia
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# PHPUnit
+.phpunit.result.cache
+/tests/coverage/
+
+# Backup vari
+*.bak
+*.orig
+*~

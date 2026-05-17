@@ -1,0 +1,188 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ labelMese }} &middot; Piani turno &middot; {{ app.name }}{% endblock %}
+
+{% block main_class %}container-fluid py-4{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <a href="{{ url('/piani-turno') }}" class="text-decoration-none small">&larr; Tutti i piani</a>
+        <h1 class="h3 mb-0">
+            Piano turno — {{ labelMese }}
+            <span class="badge bg-info text-dark align-middle">{{ piano.setting_nome }}</span>
+            {% if piano.stato == 'bozza' %}
+                <span class="badge bg-warning text-dark align-middle">bozza</span>
+            {% elseif piano.stato == 'pubblicato' %}
+                <span class="badge bg-success align-middle">pubblicato</span>
+            {% else %}
+                <span class="badge bg-secondary align-middle">archiviato</span>
+            {% endif %}
+        </h1>
+        {% if piano.nome %}<div class="text-muted">{{ piano.nome }}</div>{% endif %}
+    </div>
+
+    {% if puoModificare %}
+        <div class="d-flex gap-2 flex-wrap">
+            {% if piano.stato == 'bozza' %}
+                <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/publish') }}" class="d-inline"
+                      onsubmit="return confirm('Pubblicare il piano? Sarà visibile come piano corrente.');">
+                    {{ csrf_field() }}
+                    <button type="submit" class="btn btn-success">Pubblica</button>
+                </form>
+                <a href="{{ url('/piani-turno/' ~ piano.id ~ '/delete-confirm') }}"
+                   class="btn btn-outline-danger">Elimina…</a>
+            {% elseif piano.stato == 'pubblicato' %}
+                <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/unpublish') }}" class="d-inline"
+                      onsubmit="return confirm('Riportare il piano in bozza per correggerlo?');">
+                    {{ csrf_field() }}
+                    <button type="submit" class="btn btn-outline-warning">Riporta in bozza</button>
+                </form>
+                <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/archive') }}" class="d-inline"
+                      onsubmit="return confirm('Archiviare definitivamente il piano? L\'operazione non è reversibile.');">
+                    {{ csrf_field() }}
+                    <button type="submit" class="btn btn-outline-secondary">Archivia</button>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted small mb-2">Periodo</h6>
+                <div class="h5 mb-0">{{ labelMese }}</div>
+                <div class="text-muted small">{{ giorni|length }} giorni</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted small mb-2">Turni assegnati</h6>
+                <div class="h5 mb-0">{{ numTurni }}</div>
+                <div class="text-muted small">
+                    {% if numTurni == 0 %}
+                        Nessun turno assegnato.{% if celleEditabili %} Clicca una cella per iniziare.{% endif %}
+                    {% else %}
+                        celle compilate
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted small mb-2">Operatori inclusi</h6>
+                <div class="h5 mb-0">{{ saldi|length }}</div>
+                <div class="text-muted small">con saldo ore</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h2 class="h5 mt-4 mb-2">Calendario</h2>
+{% if not celleEditabili and puoModificare %}
+    <div class="alert alert-light border small mb-2">
+        Il piano è in stato <strong>{{ piano.stato }}</strong>: per modificare i turni riportalo prima in bozza.
+    </div>
+{% endif %}
+
+<div class="table-responsive">
+    <table class="table table-bordered table-sm calendario-piano mb-4">
+        <thead>
+            <tr>
+                <th class="op-col">Operatore</th>
+                {% for g in giorni %}
+                    <th class="text-center {% if g.weekend %}weekend{% endif %}">
+                        <div class="small text-muted">{{ g.nome }}</div>
+                        <div>{{ g.numero }}</div>
+                    </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% if saldi|length == 0 %}
+                <tr>
+                    <td colspan="{{ giorni|length + 1 }}" class="text-center text-muted">
+                        Nessun operatore attivo al momento della creazione del piano.
+                    </td>
+                </tr>
+            {% else %}
+                {% for s in saldi %}
+                    <tr>
+                        <td class="op-col">
+                            <strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}
+                            <div class="text-muted small">{{ s.categoria_nome }}</div>
+                        </td>
+                        {% for g in giorni %}
+                            {% set turno = turniByOpData[s.id_operatore][g.date] ?? null %}
+                            {% set cellClass = 'text-center cella-turno' ~ (g.weekend ? ' weekend' : '') %}
+                            {% if celleEditabili %}
+                                <td class="{{ cellClass }} cella-editabile">
+                                    <a class="cella-link"
+                                       href="{{ url('/piani-turno/' ~ piano.id ~ '/turni/edit?operatore=' ~ s.id_operatore ~ '&data=' ~ g.date) }}"
+                                       {% if turno %}
+                                           style="background-color: {{ turno.tipo_colore }};"
+                                           title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}"
+                                       {% else %}
+                                           title="Assegna turno a {{ s.operatore_cognome }} {{ s.operatore_nome }} il {{ g.numero }}"
+                                       {% endif %}>
+                                        {% if turno %}{{ turno.tipo_codice }}{% else %}<span class="cella-vuota">+</span>{% endif %}
+                                    </a>
+                                </td>
+                            {% else %}
+                                <td class="{{ cellClass }}"
+                                    {% if turno %}
+                                        style="background-color: {{ turno.tipo_colore }};"
+                                        title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}"
+                                    {% endif %}>
+                                    {% if turno %}{{ turno.tipo_codice }}{% else %}&nbsp;{% endif %}
+                                </td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<h2 class="h5 mt-4 mb-2">Saldi ore</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Operatore</th>
+                <th>Categoria</th>
+                <th class="text-end">Ore dovute</th>
+                <th class="text-end">Ore lavorate</th>
+                <th class="text-end">Saldo mese</th>
+                <th class="text-end">Saldo progressivo</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in saldi %}
+                <tr>
+                    <td><strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}</td>
+                    <td>{{ s.categoria_nome }}</td>
+                    <td class="text-end">{{ s.ore_dovute }}</td>
+                    <td class="text-end">{{ s.ore_lavorate }}</td>
+                    <td class="text-end {% if s.saldo_mese < 0 %}text-danger{% endif %}">{{ s.saldo_mese }}</td>
+                    <td class="text-end {% if s.saldo_progressivo < 0 %}text-danger{% endif %}">{{ s.saldo_progressivo }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="6" class="text-center text-muted">Nessun saldo registrato.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="text-muted small mt-3">
+    Piano creato il {{ format_date(piano.creato_il, 'd/m/Y H:i') }}
+    {% if piano.pubblicato_il %} &middot; pubblicato il {{ format_date(piano.pubblicato_il, 'd/m/Y H:i') }}{% endif %}
+</div>
+{% endblock %}

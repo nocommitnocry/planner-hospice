@@ -1,0 +1,57 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ titolo }} &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">{{ titolo }}</h1>
+            <a href="{{ url('/categorie-operatori') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        <form method="post" action="{{ url(action) }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="mb-3">
+                <label for="nome" class="form-label">Nome <span class="text-danger">*</span></label>
+                <input type="text" id="nome" name="nome" maxlength="50"
+                       class="form-control{% if form_errors.nome %} is-invalid{% endif %}"
+                       value="{{ old_input.nome ?? categoria.nome ?? '' }}"
+                       required autofocus>
+                {% if form_errors.nome %}
+                    <div class="invalid-feedback">{{ form_errors.nome|first }}</div>
+                {% endif %}
+                <div class="form-text">Es. INFERMIERE, OSS, COORDINATORE. Viene memorizzato in maiuscolo.</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="descrizione" class="form-label">Descrizione</label>
+                <input type="text" id="descrizione" name="descrizione" maxlength="255"
+                       class="form-control{% if form_errors.descrizione %} is-invalid{% endif %}"
+                       value="{{ old_input.descrizione ?? categoria.descrizione ?? '' }}">
+                {% if form_errors.descrizione %}
+                    <div class="invalid-feedback">{{ form_errors.descrizione|first }}</div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="ordine_visualizzazione" class="form-label">Ordine di visualizzazione</label>
+                <input type="number" id="ordine_visualizzazione" name="ordine_visualizzazione"
+                       min="0" max="9999"
+                       class="form-control{% if form_errors.ordine_visualizzazione %} is-invalid{% endif %}"
+                       value="{{ old_input.ordine_visualizzazione ?? categoria.ordine_visualizzazione ?? 0 }}">
+                {% if form_errors.ordine_visualizzazione %}
+                    <div class="invalid-feedback">{{ form_errors.ordine_visualizzazione|first }}</div>
+                {% endif %}
+                <div class="form-text">Numero per ordinare le categorie nelle liste. Più basso = prima.</div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+                <a href="{{ url('/categorie-operatori') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

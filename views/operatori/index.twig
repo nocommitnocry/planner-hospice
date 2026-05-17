@@ -1,0 +1,94 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Operatori &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+{% set base_qs = (mostraInattivi ? 'inattivi=1&' : '') ~ (settingFiltro ? 'setting=' ~ settingFiltro : '') %}
+{% set base_qs = base_qs|trim('&') %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Operatori</h1>
+    <div class="d-flex gap-2">
+        {% set toggle_inattivi_qs = (mostraInattivi ? '' : 'inattivi=1') ~ (settingFiltro ? (mostraInattivi ? '' : '&') ~ 'setting=' ~ settingFiltro : '') %}
+        <a href="{{ url('/operatori' ~ (toggle_inattivi_qs ? '?' ~ toggle_inattivi_qs : '')) }}"
+           class="btn btn-outline-secondary">
+            {% if mostraInattivi %}Mostra solo attivi{% else %}Mostra anche disattivati{% endif %}
+        </a>
+        <a href="{{ url('/operatori/create') }}" class="btn btn-primary">+ Nuovo operatore</a>
+    </div>
+</div>
+
+<ul class="nav nav-pills mb-3">
+    {% set inattivi_qs = mostraInattivi ? 'inattivi=1' : '' %}
+    <li class="nav-item">
+        <a class="nav-link {% if settingFiltro == '' %}active{% endif %}"
+           href="{{ url('/operatori' ~ (inattivi_qs ? '?' ~ inattivi_qs : '')) }}">Tutti i setting</a>
+    </li>
+    {% for s in settings %}
+        <li class="nav-item">
+            <a class="nav-link {% if settingFiltro == s.codice %}active{% endif %}"
+               href="{{ url('/operatori?' ~ (inattivi_qs ? inattivi_qs ~ '&' : '') ~ 'setting=' ~ s.codice) }}">
+                {{ s.nome }}
+            </a>
+        </li>
+    {% endfor %}
+</ul>
+
+{% if operatori|length == 0 %}
+    <div class="alert alert-info">Nessun operatore in questo filtro.</div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Cognome e nome</th>
+                    <th>Categoria</th>
+                    <th>Setting</th>
+                    <th class="text-end">Ore/mese</th>
+                    <th>Email</th>
+                    <th>Telefono</th>
+                    <th class="text-center">Stato</th>
+                    <th style="width:18rem" class="text-end">Azioni</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for o in operatori %}
+                    <tr class="{% if not o.attivo %}text-muted{% endif %}">
+                        <td>
+                            <strong>{{ o.cognome }}</strong> {{ o.nome }}
+                        </td>
+                        <td>{{ o.categoria_nome }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ o.setting_nome }}</span></td>
+                        <td class="text-end">{{ o.ore_contrattuali_mensili }}</td>
+                        <td class="small">{{ o.email|default('—') }}</td>
+                        <td class="small">{{ o.telefono|default('—') }}</td>
+                        <td class="text-center">
+                            {% if o.attivo %}
+                                <span class="badge bg-success">attivo</span>
+                            {% else %}
+                                <span class="badge bg-secondary">disattivato</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url('/operatori/' ~ o.id ~ '/edit') }}"
+                               class="btn btn-sm btn-outline-secondary">Modifica</a>
+                            <form method="post" action="{{ url('/operatori/' ~ o.id ~ '/toggle-attivo') }}" class="d-inline">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-sm btn-outline-warning">
+                                    {% if o.attivo %}Disattiva{% else %}Riattiva{% endif %}
+                                </button>
+                            </form>
+                            <form method="post" action="{{ url('/operatori/' ~ o.id ~ '/delete') }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Eliminare definitivamente {{ o.cognome }} {{ o.nome }}? (Possibile solo se non ha turni o assenze registrati)');">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

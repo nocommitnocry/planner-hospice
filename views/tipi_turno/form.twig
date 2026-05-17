@@ -1,0 +1,123 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ titolo }} &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">{{ titolo }}</h1>
+            <a href="{{ url('/tipi-turno') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        <form method="post" action="{{ url(action) }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="codice" class="form-label">Codice <span class="text-danger">*</span></label>
+                    <input type="text" id="codice" name="codice" maxlength="10"
+                           class="form-control{% if form_errors.codice %} is-invalid{% endif %}"
+                           value="{{ old_input.codice ?? tipo.codice ?? '' }}"
+                           required autofocus>
+                    {% if form_errors.codice %}
+                        <div class="invalid-feedback">{{ form_errors.codice|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-9">
+                    <label for="descrizione" class="form-label">Descrizione <span class="text-danger">*</span></label>
+                    <input type="text" id="descrizione" name="descrizione" maxlength="100"
+                           class="form-control{% if form_errors.descrizione %} is-invalid{% endif %}"
+                           value="{{ old_input.descrizione ?? tipo.descrizione ?? '' }}" required>
+                    {% if form_errors.descrizione %}
+                        <div class="invalid-feedback">{{ form_errors.descrizione|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-3">
+                    <label for="ora_inizio" class="form-label">Ora inizio</label>
+                    <input type="time" id="ora_inizio" name="ora_inizio"
+                           class="form-control{% if form_errors.ora_inizio %} is-invalid{% endif %}"
+                           value="{{ (old_input.ora_inizio ?? tipo.ora_inizio ?? '')|slice(0,5) }}">
+                    {% if form_errors.ora_inizio %}
+                        <div class="invalid-feedback">{{ form_errors.ora_inizio|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-3">
+                    <label for="ora_fine" class="form-label">Ora fine</label>
+                    <input type="time" id="ora_fine" name="ora_fine"
+                           class="form-control{% if form_errors.ora_fine %} is-invalid{% endif %}"
+                           value="{{ (old_input.ora_fine ?? tipo.ora_fine ?? '')|slice(0,5) }}">
+                    {% if form_errors.ora_fine %}
+                        <div class="invalid-feedback">{{ form_errors.ora_fine|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-3">
+                    <label for="ore_conteggiate" class="form-label">Ore conteggiate <span class="text-danger">*</span></label>
+                    <input type="number" id="ore_conteggiate" name="ore_conteggiate"
+                           step="0.25" min="0" max="99.99"
+                           class="form-control{% if form_errors.ore_conteggiate %} is-invalid{% endif %}"
+                           value="{{ old_input.ore_conteggiate ?? tipo.ore_conteggiate ?? '0.00' }}" required>
+                    {% if form_errors.ore_conteggiate %}
+                        <div class="invalid-feedback">{{ form_errors.ore_conteggiate|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-3">
+                    <label for="priorita" class="form-label">Priorità</label>
+                    <input type="number" id="priorita" name="priorita" min="0" max="999"
+                           class="form-control{% if form_errors.priorita %} is-invalid{% endif %}"
+                           value="{{ old_input.priorita ?? tipo.priorita ?? 0 }}">
+                    {% if form_errors.priorita %}
+                        <div class="invalid-feedback">{{ form_errors.priorita|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-3">
+                    <label for="colore" class="form-label">Colore</label>
+                    <input type="color" id="colore" name="colore"
+                           class="form-control form-control-color{% if form_errors.colore %} is-invalid{% endif %}"
+                           value="{{ old_input.colore ?? tipo.colore ?? '#FFFFFF' }}">
+                    {% if form_errors.colore %}
+                        <div class="invalid-feedback">{{ form_errors.colore|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-12">
+                    <fieldset class="border rounded p-3">
+                        <legend class="fs-6 float-none w-auto px-2">Categoria del turno (una sola, oppure nessuna = turno di lavoro)</legend>
+
+                        {% set flags = [
+                            {key: 'is_riposo',    label: 'Riposo (non lavorato, non conteggiato)'},
+                            {key: 'is_ferie',     label: 'Ferie'},
+                            {key: 'is_permesso',  label: 'Permesso'},
+                            {key: 'is_malattia',  label: 'Malattia'},
+                            {key: 'is_formazione',label: 'Formazione / Corso'}
+                        ] %}
+
+                        {% for f in flags %}
+                            {% set checked = (old_input is iterable and old_input[f.key] is defined)
+                                ? old_input[f.key] in ['1','on','true']
+                                : (tipo[f.key] ?? false) %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox"
+                                       id="{{ f.key }}" name="{{ f.key }}" value="1"
+                                       {% if checked %}checked{% endif %}>
+                                <label class="form-check-label" for="{{ f.key }}">{{ f.label }}</label>
+                            </div>
+                        {% endfor %}
+                    </fieldset>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url('/tipi-turno') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

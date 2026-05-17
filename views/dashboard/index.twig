@@ -1,0 +1,93 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Dashboard &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
+
+<div class="alert alert-info">
+    <strong>Sessione 4-bis completata.</strong> Introdotto il concetto di <em>setting</em>
+    (Hospice e UCP-DOM). Per ogni mese possono coesistere due piani, uno per setting; gli
+    operatori appartengono a un setting "di casa". Prossime sessioni: operatori in itinere
+    e saldi editabili, overlay cross-setting, vincoli bloccanti.
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6 col-lg-3">
+        <a href="{{ url('/piani-turno') }}" class="card h-100 text-decoration-none">
+            <div class="card-body">
+                <h5 class="card-title">Piani turno</h5>
+                <p class="text-muted small mb-0">Piani mensili: bozza, pubblicato, archiviato.</p>
+            </div>
+        </a>
+    </div>
+
+    {% if currentUser.ruolo in ['admin', 'caposala'] %}
+        <div class="col-md-6 col-lg-3">
+            <a href="{{ url('/operatori') }}" class="card h-100 text-decoration-none">
+                <div class="card-body">
+                    <h5 class="card-title">Operatori</h5>
+                    <p class="text-muted small mb-0">Personale dell'hospice da pianificare.</p>
+                </div>
+            </a>
+        </div>
+    {% endif %}
+
+    {% if currentUser.ruolo == 'admin' %}
+        <div class="col-md-6 col-lg-3">
+            <a href="{{ url('/categorie-operatori') }}" class="card h-100 text-decoration-none">
+                <div class="card-body">
+                    <h5 class="card-title">Categorie</h5>
+                    <p class="text-muted small mb-0">Qualifiche: infermiere, OSS, coordinatore.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="{{ url('/tipi-turno') }}" class="card h-100 text-decoration-none">
+                <div class="card-body">
+                    <h5 class="card-title">Tipi turno</h5>
+                    <p class="text-muted small mb-0">Codici M/P/N/F e ore conteggiate.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="{{ url('/utenti') }}" class="card h-100 text-decoration-none">
+                <div class="card-body">
+                    <h5 class="card-title">Utenti applicativi</h5>
+                    <p class="text-muted small mb-0">Chi accede al sistema.</p>
+                </div>
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<div class="row g-3 mt-1">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Identità sessione</h5>
+                <dl class="row mb-0 small">
+                    <dt class="col-5">Username</dt><dd class="col-7">{{ currentUser.username }}</dd>
+                    <dt class="col-5">Ruolo</dt>   <dd class="col-7">{{ currentUser.ruolo }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Sicurezza attiva</h5>
+                <ul class="mb-0 small">
+                    <li>Autenticazione con lockout per username e IP</li>
+                    <li>Sessioni con cookie HttpOnly + SameSite + regenerate_id</li>
+                    <li>Protezione CSRF su tutte le richieste mutanti</li>
+                    <li>Header di sicurezza e CSP base</li>
+                    <li>Template Twig con escape automatico (XSS protection by-default)</li>
+                    <li>Validazione dei dati centralizzata in <code>App\Validators</code></li>
+                    <li>Logging strutturato su <code>storage/logs/</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Errore &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="text-center py-5">
+    <h1 class="display-1">500</h1>
+    <p class="lead">Errore interno del server.</p>
+    <p class="text-muted">{{ message|default('Si è verificato un problema durante l\'elaborazione della richiesta.') }}</p>
+
+    {% if debug and exception %}
+        <div class="alert alert-secondary text-start mx-auto mt-4" style="max-width: 900px;">
+            <p class="mb-1"><strong>{{ exception|e }}</strong></p>
+            <pre class="small mb-0">{{ exception.getTraceAsString() }}</pre>
+        </div>
+    {% endif %}
+
+    <a href="{{ url('/') }}" class="btn btn-primary mt-3">Torna alla home</a>
+</div>
+{% endblock %}

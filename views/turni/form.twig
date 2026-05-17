@@ -1,0 +1,119 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}
+    {{ turno ? 'Modifica turno' : 'Assegna turno' }} &middot; {{ labelMese }} &middot; {{ app.name }}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="text-decoration-none small">&larr; Torna al piano</a>
+                <h1 class="h3 mb-0">{{ turno ? 'Modifica turno' : 'Assegna turno' }}</h1>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <div class="row small">
+                    <div class="col-sm-6">
+                        <span class="text-muted">Operatore:</span>
+                        <strong>{{ operatore.cognome }} {{ operatore.nome }}</strong>
+                    </div>
+                    <div class="col-sm-6">
+                        <span class="text-muted">Data:</span>
+                        <strong>{{ labelData }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if vincoli|length > 0 %}
+            <div class="alert alert-warning small">
+                <strong>Vincoli attivi per questo operatore:</strong>
+                <ul class="mb-0">
+                    {% for v in vincoli %}
+                        <li>
+                            <code>{{ v.tipo_vincolo }}</code>
+                            {% if v.data_inizio or v.data_fine %}
+                                ({{ v.data_inizio ? format_date(v.data_inizio) : '…' }} —
+                                 {{ v.data_fine ? format_date(v.data_fine) : '…' }})
+                            {% endif %}
+                            {% if v.note %} — <span class="text-muted">{{ v.note }}</span>{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+                <div class="text-muted mt-1">Verifica manualmente la compatibilità con il tipo turno scelto.</div>
+            </div>
+        {% endif %}
+
+        {% set actionUrl = turno
+            ? url('/piani-turno/' ~ piano.id ~ '/turni/' ~ turno.id)
+            : url('/piani-turno/' ~ piano.id ~ '/turni') %}
+
+        <form method="post" action="{{ actionUrl }}" novalidate>
+            {{ csrf_field() }}
+            {% if not turno %}
+                <input type="hidden" name="id_operatore" value="{{ operatore.id }}">
+                <input type="hidden" name="data" value="{{ data }}">
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label">Tipo turno <span class="text-danger">*</span></label>
+                {% set tipoSel = old_input.id_tipo_turno ?? (turno ? turno.id_tipo_turno : null) %}
+                <div class="tipi-turno-grid {% if form_errors.id_tipo_turno %}is-invalid{% endif %}">
+                    {% for t in tipi %}
+                        <label class="tipo-turno-opzione {% if tipoSel == t.id %}selected{% endif %}"
+                               style="background-color: {{ t.colore }};"
+                               title="{{ t.descrizione }} ({{ t.ore_conteggiate }}h)">
+                            <input type="radio" name="id_tipo_turno" value="{{ t.id }}"
+                                   {% if tipoSel == t.id %}checked{% endif %} required>
+                            <span class="codice">{{ t.codice }}</span>
+                            <span class="descrizione small">{{ t.descrizione }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                {% if form_errors.id_tipo_turno %}
+                    <div class="invalid-feedback d-block">{{ form_errors.id_tipo_turno|first }}</div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="note" class="form-label">
+                    Note <span class="text-muted small">(opzionale)</span>
+                </label>
+                <textarea id="note" name="note" rows="2" maxlength="1000"
+                          class="form-control{% if form_errors.note %} is-invalid{% endif %}"
+                          placeholder="Eventuali annotazioni…">{{ old_input.note ?? (turno ? turno.note : '') }}</textarea>
+                {% if form_errors.note %}
+                    <div class="invalid-feedback">{{ form_errors.note|first }}</div>
+                {% endif %}
+            </div>
+
+            <div class="d-flex justify-content-between gap-2 mt-4 flex-wrap">
+                <div>
+                    {% if turno %}
+                        <button type="submit" form="form-delete-turno" class="btn btn-outline-danger">Elimina turno</button>
+                    {% endif %}
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="btn btn-outline-secondary">Annulla</a>
+                    <button type="submit" class="btn btn-primary">
+                        {{ turno ? 'Salva modifiche' : 'Assegna turno' }}
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        {% if turno %}
+            <form id="form-delete-turno" method="post"
+                  action="{{ url('/piani-turno/' ~ piano.id ~ '/turni/' ~ turno.id ~ '/delete') }}"
+                  onsubmit="return confirm('Eliminare questo turno? Il saldo dell\'operatore verrà ricalcolato.');"
+                  class="d-none">
+                {{ csrf_field() }}
+            </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

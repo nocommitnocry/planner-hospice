@@ -1,0 +1,77 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Tipi turno &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Tipi turno</h1>
+    <a href="{{ url('/tipi-turno/create') }}" class="btn btn-primary">+ Nuovo tipo turno</a>
+</div>
+
+<p class="text-muted small">
+    I tipi turno definiscono cosa può comparire in una cella del piano (M=Mattina, P=Pomeriggio, F=Ferie, ecc.).
+    Le bandiere a destra dicono al motore di calcolo come trattare il turno.
+</p>
+
+{% if tipi|length == 0 %}
+    <div class="alert alert-info">Nessun tipo turno definito.</div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th style="width:4rem">Cod.</th>
+                    <th>Descrizione</th>
+                    <th>Orario</th>
+                    <th class="text-end">Ore</th>
+                    <th class="text-center">Priorità</th>
+                    <th>Categoria</th>
+                    <th style="width:5rem">Colore</th>
+                    <th style="width:14rem" class="text-end">Azioni</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tipi %}
+                    <tr>
+                        <td><strong>{{ t.codice }}</strong></td>
+                        <td>{{ t.descrizione }}</td>
+                        <td class="text-muted small">
+                            {% if t.ora_inizio and t.ora_fine %}
+                                {{ t.ora_inizio[0:5] }} – {{ t.ora_fine[0:5] }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ t.ore_conteggiate }}</td>
+                        <td class="text-center">{{ t.priorita }}</td>
+                        <td>
+                            {% if t.is_riposo %}<span class="badge bg-secondary">riposo</span>{% endif %}
+                            {% if t.is_ferie %}<span class="badge bg-warning text-dark">ferie</span>{% endif %}
+                            {% if t.is_permesso %}<span class="badge bg-info text-dark">permesso</span>{% endif %}
+                            {% if t.is_malattia %}<span class="badge bg-danger">malattia</span>{% endif %}
+                            {% if t.is_formazione %}<span class="badge bg-primary">formazione</span>{% endif %}
+                            {% if not (t.is_riposo or t.is_ferie or t.is_permesso or t.is_malattia or t.is_formazione) %}
+                                <span class="text-muted small">lavoro</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="d-inline-block border" style="width:2rem;height:1.2rem;background:{{ t.colore }}"
+                                  title="{{ t.colore }}"></span>
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url('/tipi-turno/' ~ t.id ~ '/edit') }}"
+                               class="btn btn-sm btn-outline-secondary">Modifica</a>
+                            <form method="post" action="{{ url('/tipi-turno/' ~ t.id ~ '/delete') }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Eliminare il tipo turno «{{ t.codice }}»?');">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

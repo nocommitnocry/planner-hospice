@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ app.name }}{% endblock %}</title>
+
+    <link rel="icon" href="{{ asset('images/favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ asset('css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+
+    {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+    {% if currentUser %}
+        {% include 'layout/navbar.twig' %}
+    {% endif %}
+
+    {% if flash|length > 0 %}
+        <div class="container mt-3" role="region" aria-label="Notifiche">
+            {% for f in flash %}
+                <div class="alert alert-{{ f.type == 'error' ? 'danger' : f.type }} alert-dismissible fade show" role="alert">
+                    {{ f.message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Chiudi"></button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <main class="{% block main_class %}container py-4{% endblock %}">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="text-center text-muted py-3 small">
+        &copy; {{ app.year }} {{ organization.name }} &middot; {{ app.name }}
+    </footer>
+
+    <script src="{{ asset('js/bootstrap.bundle.min.js') }}" defer></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

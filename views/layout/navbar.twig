@@ -1,0 +1,61 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url('/') }}">{{ app.name }}</a>
+
+        <button class="navbar-toggler" type="button"
+                data-bs-toggle="collapse" data-bs-target="#mainNav"
+                aria-controls="mainNav" aria-expanded="false" aria-label="Apri menu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="mainNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url('/') }}">Dashboard</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url('/piani-turno') }}">Piani turno</a>
+                </li>
+
+                {% if currentUser.ruolo in ['admin', 'caposala'] %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="anagraficheMenu"
+                           role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            Anagrafiche
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="anagraficheMenu">
+                            <li><a class="dropdown-item" href="{{ url('/operatori') }}">Operatori</a></li>
+                            {% if currentUser.ruolo == 'admin' %}
+                                <li><a class="dropdown-item" href="{{ url('/categorie-operatori') }}">Categorie operatori</a></li>
+                                <li><a class="dropdown-item" href="{{ url('/tipi-turno') }}">Tipi turno</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="{{ url('/utenti') }}">Utenti applicativi</a></li>
+                            {% endif %}
+                        </ul>
+                    </li>
+                {% endif %}
+            </ul>
+
+            <ul class="navbar-nav">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="userMenu"
+                       role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        {{ currentUser.nome }} {{ currentUser.cognome }}
+                        <span class="badge bg-light text-dark ms-1">{{ currentUser.ruolo }}</span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                        <li><a class="dropdown-item" href="{{ url('/change-password') }}">Cambia password</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" action="{{ url('/logout') }}" class="px-2">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-link dropdown-item p-0">Esci</button>
+                            </form>
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>

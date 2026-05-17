@@ -1,0 +1,50 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Categorie operatori &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Categorie operatori</h1>
+    <a href="{{ url('/categorie-operatori/create') }}" class="btn btn-primary">
+        + Nuova categoria
+    </a>
+</div>
+
+{% if categorie|length == 0 %}
+    <div class="alert alert-info">
+        Nessuna categoria definita. Le categorie raggruppano gli operatori per qualifica (es. INFERMIERE, OSS).
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th style="width:5rem">Ordine</th>
+                    <th>Nome</th>
+                    <th>Descrizione</th>
+                    <th style="width:14rem" class="text-end">Azioni</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in categorie %}
+                    <tr>
+                        <td>{{ c.ordine_visualizzazione }}</td>
+                        <td><strong>{{ c.nome }}</strong></td>
+                        <td class="text-muted">{{ c.descrizione|default('—') }}</td>
+                        <td class="text-end">
+                            <a href="{{ url('/categorie-operatori/' ~ c.id ~ '/edit') }}"
+                               class="btn btn-sm btn-outline-secondary">Modifica</a>
+                            <form method="post" action="{{ url('/categorie-operatori/' ~ c.id ~ '/delete') }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Eliminare la categoria «{{ c.nome }}»?');">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}
