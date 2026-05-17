@@ -7,6 +7,7 @@ use App\Helpers\Container;
 use App\Helpers\Database;
 use App\Helpers\Logger;
 use App\Models\OperatoreModel;
+use App\Models\PianoOperatoreModel;
 use App\Models\PianoTurnoModel;
 use App\Models\SaldoOreModel;
 use App\Models\SettingModel;
@@ -39,6 +40,7 @@ final class PianiTurnoController extends BaseController
     private OperatoreModel $operatori;
     private TurnoModel $turni;
     private SettingModel $settings;
+    private PianoOperatoreModel $pianoOperatori;
     private Database $db;
 
     private const MESI_IT = [
@@ -55,6 +57,7 @@ final class PianiTurnoController extends BaseController
         $this->operatori = new OperatoreModel();
         $this->turni = new TurnoModel();
         $this->settings = new SettingModel();
+        $this->pianoOperatori = new PianoOperatoreModel();
         $this->db = Container::instance()->get(Database::class);
     }
 
@@ -122,19 +125,23 @@ final class PianiTurnoController extends BaseController
             );
         }
 
-        $operatoriAttivi = $this->operatori->findBy(['attivo' => 1, 'id_setting' => $idSetting]);
-        if ($operatoriAttivi === []) {
+        // Fotografa-operatori: attivi, di casa nel setting del piano,
+        // assunti entro l'ultimo del mese, non cessati prima del primo.
+        // Le date sono informative (vedi 4-ter): cessati post-mese restano,
+        // le ore residue vanno regolate a mano dal saldo del piano.
+        $operatoriDelPiano = $this->operatori->findInServizioNelMese($anno, $mese, $idSetting);
+        if ($operatoriDelPiano === []) {
             return $this->redirect(
                 '/piani-turno',
                 'error',
-                "Impossibile creare il piano «{$settingNome}»: non ci sono operatori attivi in questo setting. Aggiungili da Anagrafiche → Operatori.",
+                "Impossibile creare il piano «{$settingNome}»: non ci sono operatori attivi in servizio per {$this->labelMese($mese, $anno)} in questo setting.",
             );
         }
 
         $userId = $this->currentUserId();
 
         try {
-            $idPiano = $this->db->transaction(function () use ($validation, $anno, $mese, $idSetting, $operatoriAttivi, $userId): int {
+            $idPiano = $this->db->transaction(function () use ($validation, $anno, $mese, $idSetting, $operatoriDelPiano, $userId): int {
                 $idPiano = $this->piani->create([
                     'anno'       => $anno,
                     'mese'       => $mese,
@@ -144,24 +151,44 @@ final class PianiTurnoController extends BaseController
                     'creato_da'  => $userId,
                 ]);
 
-                foreach ($operatoriAttivi as $op) {
+                foreach ($operatoriDelPiano as $op) {
+                    $idOp = (int) $op['id'];
                     $oreDovute = (float) $op['ore_contrattuali_mensili'];
-                    $saldoMese = -$oreDovute;
-                    $progPrev  = (float) $this->saldi->getProgressivoPrevious((int) $op['id'], $anno, $mese);
-                    $saldoProg = $progPrev + $saldoMese;
 
-                    $this->saldi->create([
-                        'id_operatore'      => (int) $op['id'],
-                        'anno'              => $anno,
-                        'mese'              => $mese,
-                        'ore_dovute'        => number_format($oreDovute, 2, '.', ''),
-                        'ore_lavorate'      => '0.00',
-                        'ore_ferie'         => '0.00',
-                        'ore_permessi'      => '0.00',
-                        'ore_malattia'      => '0.00',
-                        'ore_formazione'    => '0.00',
-                        'saldo_mese'        => number_format($saldoMese, 2, '.', ''),
-                        'saldo_progressivo' => number_format($saldoProg, 2, '.', ''),
+                    // Il saldo (op, anno, mese) può già esistere se l'altro
+                    // piano del mese (setting opposto) è stato creato prima e
+                    // l'op è "in itinere" lì. In quel caso non lo ricreiamo
+                    // — il saldo è unico cross-setting (vedi schema).
+                    $saldoEsistente = $this->saldi->findOneBy([
+                        'id_operatore' => $idOp,
+                        'anno'         => $anno,
+                        'mese'         => $mese,
+                    ]);
+                    if ($saldoEsistente === null) {
+                        $saldoMese = -$oreDovute;
+                        $progPrev  = (float) $this->saldi->getProgressivoPrevious($idOp, $anno, $mese);
+                        $saldoProg = $progPrev + $saldoMese;
+                        $this->saldi->create([
+                            'id_operatore'      => $idOp,
+                            'anno'              => $anno,
+                            'mese'              => $mese,
+                            'ore_dovute'        => number_format($oreDovute, 2, '.', ''),
+                            'ore_lavorate'      => '0.00',
+                            'ore_ferie'         => '0.00',
+                            'ore_permessi'      => '0.00',
+                            'ore_malattia'      => '0.00',
+                            'ore_formazione'    => '0.00',
+                            'saldo_mese'        => number_format($saldoMese, 2, '.', ''),
+                            'saldo_progressivo' => number_format($saldoProg, 2, '.', ''),
+                        ]);
+                    }
+
+                    $this->pianoOperatori->create([
+                        'id_piano'             => $idPiano,
+                        'id_operatore'         => $idOp,
+                        'aggiunto_manualmente' => 0,
+                        'aggiunto_da'          => null,
+                        'note_aggiunta'        => null,
                     ]);
                 }
 
@@ -184,7 +211,7 @@ final class PianiTurnoController extends BaseController
             'mese'      => $mese,
             'setting'   => $idSetting,
             'user_id'   => $userId,
-            'saldi'     => count($operatoriAttivi),
+            'operatori' => count($operatoriDelPiano),
         ]);
         return $this->redirect("/piani-turno/{$idPiano}", 'success', 'Piano creato in bozza con i saldi iniziali.');
     }
@@ -199,11 +226,10 @@ final class PianiTurnoController extends BaseController
 
         $anno = (int) $piano['anno'];
         $mese = (int) $piano['mese'];
-        $idSetting = (int) $piano['id_setting'];
-        // Saldi del mese filtrati per operatori "di casa" nel setting del piano.
-        // (Il saldo è unico cross-setting, ma il calendario di un piano elenca
-        //  solo i suoi operatori; gli operatori in itinere arriveranno in 4-ter.)
-        $saldi = $this->saldi->listByAnnoMese($anno, $mese, $idSetting);
+        // Operatori del piano: presa esplicita da `piano_operatori`, joinata
+        // col saldo del mese (che è unico cross-setting). Include gli operatori
+        // aggiunti manualmente in itinere — anche dall'altro setting.
+        $operatoriDelPiano = $this->pianoOperatori->listInPiano($id, $anno, $mese);
 
         // Matrice [id_operatore][YYYY-MM-DD] => turno (per cella calendario).
         $turniByOpData = [];
@@ -216,7 +242,7 @@ final class PianiTurnoController extends BaseController
 
         return $this->render('piani_turno/show.twig', [
             'piano'              => $piano,
-            'saldi'              => $saldi,
+            'saldi'              => $operatoriDelPiano,
             'mesiIt'             => self::MESI_IT,
             'labelMese'          => $this->labelMese($mese, $anno),
             'giorni'             => $this->giorniDelMese($anno, $mese),
@@ -251,13 +277,12 @@ final class PianiTurnoController extends BaseController
 
         $anno = (int) $piano['anno'];
         $mese = (int) $piano['mese'];
-        $idSetting = (int) $piano['id_setting'];
 
         return $this->render('piani_turno/delete_confirm.twig', [
             'piano'      => $piano,
             'labelMese'  => $this->labelMese($mese, $anno),
             'numTurni'   => $this->piani->countTurni($id),
-            'numSaldi'   => count($this->saldi->listByAnnoMese($anno, $mese, $idSetting)),
+            'numSaldi'   => count($this->pianoOperatori->listInPiano($id, $anno, $mese)),
         ]);
     }
 
@@ -281,12 +306,16 @@ final class PianiTurnoController extends BaseController
         $idSetting = (int) $piano['id_setting'];
         $numTurni = $this->piani->countTurni($id);
 
-        // Il piano è in bozza: lavoro in corso, niente blocchi rigidi. La CASCADE
-        // su `fk_turni_piano` pulisce i turni; subito dopo elimino i saldi del mese
-        // limitatamente al setting di questo piano (così l'altro piano del mese
-        // resta intatto). La conferma a UI elenca esplicitamente cosa va perso.
-        $this->db->transaction(function () use ($id, $anno, $mese, $idSetting): void {
-            $this->saldi->deleteByAnnoMese($anno, $mese, $idSetting);
+        // Il piano è in bozza: lavoro in corso, niente blocchi rigidi.
+        // - CASCADE su `fk_turni_piano` pulisce i turni del piano.
+        // - CASCADE su `fk_piano_op_piano` pulisce piano_operatori.
+        // - I saldi sono cross-piano (unici per op/anno/mese): vanno eliminati
+        //   SOLO per gli operatori che non sono in altri piani dello stesso
+        //   mese (così se l'op è in itinere su entrambi i setting, l'altro
+        //   piano resta funzionante).
+        $this->db->transaction(function () use ($id, $anno, $mese): void {
+            $opInAltriPiani = $this->pianoOperatori->listOperatoriInAltriPianiDelMese($id, $anno, $mese);
+            $this->saldi->deleteByAnnoMeseEscludendoOperatori($anno, $mese, $id, $opInAltriPiani);
             $this->piani->delete($id);
         });
 

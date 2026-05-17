@@ -69,23 +69,36 @@ final class SaldoOreModel extends BaseModel
     }
 
     /**
-     * Elimina i record saldo_ore di un mese (usato in delete piano in bozza).
-     * Se $idSetting è valorizzato, elimina solo i saldi degli operatori "di casa"
-     * in quel setting: necessario quando coesiste l'altro piano del mese.
+     * Elimina i saldi del mese per gli operatori inclusi nel piano $idPiano,
+     * SALVO quelli che compaiono anche in altri piani dello stesso mese.
+     *
+     * Usato dalla destroy del piano in bozza (4-ter): il saldo è cross-setting
+     * e unico per (op, anno, mese), quindi va tenuto se serve a un altro piano
+     * dello stesso mese. La lista degli "operatori da escludere" arriva dal
+     * PianoOperatoreModel.
+     *
+     * @param list<int> $operatoriDaEscludere
      */
-    public function deleteByAnnoMese(int $anno, int $mese, ?int $idSetting = null): int
+    public function deleteByAnnoMeseEscludendoOperatori(int $anno, int $mese, int $idPiano, array $operatoriDaEscludere): int
     {
-        if ($idSetting === null) {
-            return $this->db->execute(
-                "DELETE FROM saldo_ore WHERE anno = :anno AND mese = :mese",
-                ['anno' => $anno, 'mese' => $mese]
-            );
+        // Operatori del piano: presi dalla tabella di appartenenza esplicita.
+        $opPianoRows = $this->db->query(
+            "SELECT id_operatore FROM piano_operatori WHERE id_piano = :id_piano",
+            ['id_piano' => $idPiano],
+        );
+        $opPiano = array_map(static fn ($r) => (int) $r['id_operatore'], $opPianoRows);
+        $opDaEliminare = array_values(array_diff($opPiano, $operatoriDaEscludere));
+        if ($opDaEliminare === []) {
+            return 0;
         }
+
+        // Costruzione placeholder posizionali: niente named ripetuti
+        // (vedi feedback PDO: EMULATE_PREPARES=false).
+        $placeholders = implode(',', array_fill(0, count($opDaEliminare), '?'));
+        $params = array_merge([$anno, $mese], $opDaEliminare);
         return $this->db->execute(
-            "DELETE s FROM saldo_ore s
-             JOIN operatori o ON o.id = s.id_operatore
-             WHERE s.anno = :anno AND s.mese = :mese AND o.id_setting = :id_setting",
-            ['anno' => $anno, 'mese' => $mese, 'id_setting' => $idSetting]
+            "DELETE FROM saldo_ore WHERE anno = ? AND mese = ? AND id_operatore IN ({$placeholders})",
+            $params,
         );
     }
 }

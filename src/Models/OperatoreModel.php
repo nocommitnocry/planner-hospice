@@ -13,6 +13,8 @@ final class OperatoreModel extends BaseModel
         'id_categoria',
         'id_setting',
         'ore_contrattuali_mensili',
+        'data_assunzione',
+        'data_cessazione',
         'email',
         'telefono',
         'note',
@@ -48,5 +50,61 @@ final class OperatoreModel extends BaseModel
         }
         $sql .= " ORDER BY o.cognome ASC, o.nome ASC";
         return $this->db->query($sql, $params);
+    }
+
+    /**
+     * Operatori "in servizio" in un mese: attivi, assunti entro l'ultimo del
+     * mese (o senza data_assunzione), non cessati prima del primo del mese
+     * (o senza data_cessazione). Se $idSetting è valorizzato, filtra il
+     * setting "di casa".
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function findInServizioNelMese(int $anno, int $mese, ?int $idSetting = null): array
+    {
+        $primo  = sprintf('%04d-%02d-01', $anno, $mese);
+        $ultimo = (new \DateTimeImmutable($primo))->modify('last day of this month')->format('Y-m-d');
+        $sql = "SELECT * FROM operatori
+                WHERE attivo = 1
+                  AND (data_assunzione IS NULL OR data_assunzione <= :ultimo)
+                  AND (data_cessazione IS NULL OR data_cessazione >= :primo)";
+        $params = ['ultimo' => $ultimo, 'primo' => $primo];
+        if ($idSetting !== null) {
+            $sql .= ' AND id_setting = :id_setting';
+            $params['id_setting'] = $idSetting;
+        }
+        $sql .= ' ORDER BY cognome ASC, nome ASC';
+        return $this->db->query($sql, $params);
+    }
+
+    /**
+     * Operatori candidati ad essere aggiunti a un piano in itinere: in servizio
+     * nel mese del piano e non ancora presenti in `piano_operatori`. Include
+     * operatori dell'altro setting (è il caso d'uso principale: spostamenti
+     * brevi/lunghi cross-setting).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function findCandidatiAggiunta(int $idPiano, int $anno, int $mese): array
+    {
+        $primo  = sprintf('%04d-%02d-01', $anno, $mese);
+        $ultimo = (new \DateTimeImmutable($primo))->modify('last day of this month')->format('Y-m-d');
+        return $this->db->query(
+            "SELECT o.*,
+                    c.nome AS categoria_nome,
+                    s.codice AS setting_codice,
+                    s.nome   AS setting_nome
+             FROM operatori o
+             JOIN categorie_operatori c ON c.id = o.id_categoria
+             JOIN setting s             ON s.id = o.id_setting
+             WHERE o.attivo = 1
+               AND (o.data_assunzione IS NULL OR o.data_assunzione <= :ultimo)
+               AND (o.data_cessazione IS NULL OR o.data_cessazione >= :primo)
+               AND o.id NOT IN (
+                   SELECT id_operatore FROM piano_operatori WHERE id_piano = :id_piano
+               )
+             ORDER BY o.cognome ASC, o.nome ASC",
+            ['ultimo' => $ultimo, 'primo' => $primo, 'id_piano' => $idPiano],
+        );
     }
 }

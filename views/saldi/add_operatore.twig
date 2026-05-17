@@ -1,0 +1,91 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Aggiungi operatore al piano &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">Aggiungi operatore al piano</h1>
+            <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        <div class="alert alert-light border small">
+            Piano <strong>{{ piano.setting_nome }}</strong> — {{ labelMese }}.
+            Da usare per operatori non fotografati alla creazione: assunzioni infra-mese,
+            spostamenti dall'altro setting, doppi ruoli. Il saldo è unico cross-setting:
+            se l'operatore è già nel piano dell'altro setting in questo mese, i valori
+            iniziali indicati vengono ignorati (resta il saldo già presente).
+        </div>
+
+        {% if candidati|length == 0 %}
+            <div class="alert alert-warning">
+                Nessun operatore candidato. Sono già nel piano tutti gli operatori attivi
+                in servizio per {{ labelMese }}.
+            </div>
+        {% else %}
+            <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/aggiungi-operatore') }}" novalidate>
+                {{ csrf_field() }}
+
+                <div class="mb-3">
+                    <label for="id_operatore" class="form-label">Operatore <span class="text-danger">*</span></label>
+                    <select id="id_operatore" name="id_operatore"
+                            class="form-select{% if form_errors.id_operatore %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% for o in candidati %}
+                            <option value="{{ o.id }}" {% if old_input.id_operatore == o.id %}selected{% endif %}>
+                                {{ o.cognome }} {{ o.nome }} — {{ o.categoria_nome }} ({{ o.setting_nome }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_operatore %}
+                        <div class="invalid-feedback">{{ form_errors.id_operatore|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="ore_dovute" class="form-label">Ore dovute (mese) <span class="text-danger">*</span></label>
+                        <input type="number" id="ore_dovute" name="ore_dovute"
+                               step="0.01" min="-999.99" max="999.99"
+                               class="form-control{% if form_errors.ore_dovute %} is-invalid{% endif %}"
+                               value="{{ old_input.ore_dovute ?? '' }}" required>
+                        {% if form_errors.ore_dovute %}
+                            <div class="invalid-feedback">{{ form_errors.ore_dovute|first }}</div>
+                        {% endif %}
+                        <div class="form-text">Pro-rata se assunzione/cessazione infra-mese, altrimenti ore contrattuali.</div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="saldo_progressivo" class="form-label">Saldo progressivo iniziale <span class="text-danger">*</span></label>
+                        <input type="number" id="saldo_progressivo" name="saldo_progressivo"
+                               step="0.01" min="-9999.99" max="9999.99"
+                               class="form-control{% if form_errors.saldo_progressivo %} is-invalid{% endif %}"
+                               value="{{ old_input.saldo_progressivo ?? '0.00' }}" required>
+                        {% if form_errors.saldo_progressivo %}
+                            <div class="invalid-feedback">{{ form_errors.saldo_progressivo|first }}</div>
+                        {% endif %}
+                        <div class="form-text">Valore comunicato dall'operatore (cedolino). Usa 0,00 se sconosciuto.</div>
+                    </div>
+                </div>
+
+                <div class="mb-3 mt-3">
+                    <label for="note" class="form-label">Nota motivazione <span class="text-danger">*</span></label>
+                    <textarea id="note" name="note" rows="3" maxlength="1000"
+                              class="form-control{% if form_errors.note %} is-invalid{% endif %}"
+                              required>{{ old_input.note ?? '' }}</textarea>
+                    {% if form_errors.note %}
+                        <div class="invalid-feedback">{{ form_errors.note|first }}</div>
+                    {% endif %}
+                    <div class="form-text">Obbligatoria per tracciabilità (es. "spostato da UCP-DOM per copertura ferie marzo", "assunzione dal 14/05").</div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="btn btn-outline-secondary">Annulla</a>
+                    <button type="submit" class="btn btn-primary">Aggiungi al piano</button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

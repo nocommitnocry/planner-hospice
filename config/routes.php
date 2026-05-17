@@ -6,6 +6,7 @@ use App\Controllers\CategorieOperatoriController;
 use App\Controllers\DashboardController;
 use App\Controllers\OperatoriController;
 use App\Controllers\PianiTurnoController;
+use App\Controllers\SaldiController;
 use App\Controllers\TipiTurnoController;
 use App\Controllers\TurniController;
 use App\Controllers\UtentiController;
@@ -123,4 +124,17 @@ return function (Router $r): void {
     $r->post('/piani-turno/{id}/turni',              [TurniController::class, 'store'],   $adminCaposala, name: 'turni.store');
     $r->post('/piani-turno/{id}/turni/{tid}',        [TurniController::class, 'update'],  $adminCaposala, name: 'turni.update');
     $r->post('/piani-turno/{id}/turni/{tid}/delete', [TurniController::class, 'destroy'], $adminCaposala, name: 'turni.destroy');
+
+    // -------------------------------------------------------------------------
+    // Saldi: aggiunta operatore in itinere e modifica manuale (sessione 4-ter)
+    //
+    // Tutte le azioni richiedono piano in stato 'bozza' (lo verifica il
+    // controller). Le modifiche generano una riga in `saldo_modifiche` con
+    // nota obbligatoria.
+    // -------------------------------------------------------------------------
+    $r->get('/piani-turno/{id}/aggiungi-operatore',          [SaldiController::class, 'addOperatoreForm'], $adminCaposala, name: 'saldi.add-form');
+    $r->post('/piani-turno/{id}/aggiungi-operatore',         [SaldiController::class, 'addOperatore'],     $adminCaposala, name: 'saldi.add');
+    $r->post('/piani-turno/{id}/operatori/{opid}/rimuovi',   [SaldiController::class, 'removeOperatore'],  $adminCaposala, name: 'saldi.remove');
+    $r->get('/piani-turno/{id}/saldi/{sid}/edit',            [SaldiController::class, 'editForm'],         $adminCaposala, name: 'saldi.edit-form');
+    $r->post('/piani-turno/{id}/saldi/{sid}',                [SaldiController::class, 'update'],           $adminCaposala, name: 'saldi.update');
 };

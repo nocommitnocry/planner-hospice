@@ -1,0 +1,110 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Modifica saldo &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="text-decoration-none small">&larr; Torna al piano</a>
+                <h1 class="h3 mb-0">Modifica saldo</h1>
+                <div class="text-muted">
+                    <strong>{{ operatore.cognome }}</strong> {{ operatore.nome }} &middot; {{ labelMese }}
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-light border small">
+            Modifica manuale di un saldo esistente. Lascia vuoti i campi che non vuoi cambiare.
+            La nota motivazione è sempre obbligatoria e viene salvata nello storico.
+        </div>
+
+        <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/saldi/' ~ saldo.id) }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="ore_dovute" class="form-label">Ore dovute (mese)</label>
+                    <input type="number" id="ore_dovute" name="ore_dovute"
+                           step="0.01" min="-999.99" max="999.99"
+                           class="form-control{% if form_errors.ore_dovute %} is-invalid{% endif %}"
+                           value="{{ old_input.ore_dovute ?? saldo.ore_dovute }}">
+                    {% if form_errors.ore_dovute %}
+                        <div class="invalid-feedback">{{ form_errors.ore_dovute|first }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Attuale: <strong>{{ saldo.ore_dovute }}</strong>.
+                        Caso d'uso: pro-rata di cessazione, recuperi.
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <label for="saldo_progressivo" class="form-label">Saldo progressivo</label>
+                    <input type="number" id="saldo_progressivo" name="saldo_progressivo"
+                           step="0.01" min="-9999.99" max="9999.99"
+                           class="form-control{% if form_errors.saldo_progressivo %} is-invalid{% endif %}"
+                           value="{{ old_input.saldo_progressivo ?? saldo.saldo_progressivo }}">
+                    {% if form_errors.saldo_progressivo %}
+                        <div class="invalid-feedback">{{ form_errors.saldo_progressivo|first }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Attuale: <strong>{{ saldo.saldo_progressivo }}</strong>.
+                        Aggancia al numero del cedolino: i mesi successivi vengono ricalcolati.
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3 mt-3">
+                <label for="note" class="form-label">Nota motivazione <span class="text-danger">*</span></label>
+                <textarea id="note" name="note" rows="3" maxlength="1000"
+                          class="form-control{% if form_errors.note %} is-invalid{% endif %}"
+                          required>{{ old_input.note ?? '' }}</textarea>
+                {% if form_errors.note %}
+                    <div class="invalid-feedback">{{ form_errors.note|first }}</div>
+                {% endif %}
+                <div class="form-text">Es. "cessazione 18/05 — 18h dovute residue", "aggancio cedolino aprile: +12h".</div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+                <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva modifica</button>
+            </div>
+        </form>
+
+        <h2 class="h5 mt-5 mb-2">Storico modifiche manuali</h2>
+        {% if storico|length == 0 %}
+            <p class="text-muted small">Nessuna modifica manuale registrata su questo saldo.</p>
+        {% else %}
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Utente</th>
+                            <th>Tipo</th>
+                            <th class="text-end">Prima</th>
+                            <th class="text-end">Dopo</th>
+                            <th>Nota</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in storico %}
+                            <tr>
+                                <td class="small">{{ format_date(m.creato_il, 'd/m/Y H:i') }}</td>
+                                <td class="small">
+                                    {% if m.utente_cognome %}{{ m.utente_cognome }} {{ m.utente_nome }}{% else %}—{% endif %}
+                                </td>
+                                <td><span class="badge bg-secondary">{{ m.tipo_modifica }}</span></td>
+                                <td class="text-end">{{ m.valore_precedente ?? '—' }}</td>
+                                <td class="text-end">{{ m.valore_nuovo ?? '—' }}</td>
+                                <td class="small">{{ m.note }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

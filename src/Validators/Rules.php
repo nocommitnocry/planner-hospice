@@ -99,6 +99,22 @@ final class Rules
         return null;
     }
 
+    /**
+     * Valida una data nel formato Y-m-d con round-trip per scartare le date
+     * "morbide" tipo 2026-02-31 (DateTime le accetterebbe normalizzandole).
+     */
+    public static function date(string $value, string $label): ?string
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return "{$label} deve essere una data nel formato AAAA-MM-GG.";
+        }
+        $dt = \DateTimeImmutable::createFromFormat('Y-m-d', $value);
+        if ($dt === false || $dt->format('Y-m-d') !== $value) {
+            return "{$label} non è una data valida.";
+        }
+        return null;
+    }
+
     public static function email(string $value, string $label): ?string
     {
         if (filter_var($value, FILTER_VALIDATE_EMAIL) === false) {

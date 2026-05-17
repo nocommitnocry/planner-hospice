@@ -79,6 +79,34 @@ final class OperatoreValidator extends BaseValidator
             }
         }
 
+        $assunzRaw = trim((string) ($input['data_assunzione'] ?? ''));
+        if ($assunzRaw === '') {
+            $data['data_assunzione'] = null;
+        } elseif ($err = Rules::date($assunzRaw, 'Data assunzione')) {
+            $errors['data_assunzione'][] = $err;
+        } else {
+            $data['data_assunzione'] = $assunzRaw;
+        }
+
+        $cessRaw = trim((string) ($input['data_cessazione'] ?? ''));
+        if ($cessRaw === '') {
+            $data['data_cessazione'] = null;
+        } elseif ($err = Rules::date($cessRaw, 'Data cessazione')) {
+            $errors['data_cessazione'][] = $err;
+        } else {
+            $data['data_cessazione'] = $cessRaw;
+        }
+
+        // Coerenza: cessazione >= assunzione (solo se entrambe valorizzate e valide).
+        if (
+            isset($data['data_assunzione'], $data['data_cessazione'])
+            && $data['data_assunzione'] !== null
+            && $data['data_cessazione'] !== null
+            && $data['data_cessazione'] < $data['data_assunzione']
+        ) {
+            $errors['data_cessazione'][] = 'La data di cessazione non può essere precedente alla data di assunzione.';
+        }
+
         $email = trim((string) ($input['email'] ?? ''));
         if ($email === '') {
             $data['email'] = null;

@@ -84,7 +84,13 @@
     </div>
 </div>
 
-<h2 class="h5 mt-4 mb-2">Calendario</h2>
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h2 class="h5 mb-0">Calendario</h2>
+    {% if celleEditabili %}
+        <a href="{{ url('/piani-turno/' ~ piano.id ~ '/aggiungi-operatore') }}"
+           class="btn btn-sm btn-outline-primary">+ Aggiungi operatore</a>
+    {% endif %}
+</div>
 {% if not celleEditabili and puoModificare %}
     <div class="alert alert-light border small mb-2">
         Il piano è in stato <strong>{{ piano.stato }}</strong>: per modificare i turni riportalo prima in bozza.
@@ -116,7 +122,15 @@
                     <tr>
                         <td class="op-col">
                             <strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}
-                            <div class="text-muted small">{{ s.categoria_nome }}</div>
+                            <div class="text-muted small">
+                                {{ s.categoria_nome }}
+                                {% if s.aggiunto_manualmente %}
+                                    <span class="badge bg-info text-dark"
+                                          title="Aggiunto manualmente in itinere{% if s.note_aggiunta %} — {{ s.note_aggiunta }}{% endif %}">
+                                        in itinere · {{ s.setting_codice }}
+                                    </span>
+                                {% endif %}
+                            </div>
                         </td>
                         {% for g in giorni %}
                             {% set turno = turniByOpData[s.id_operatore][g.date] ?? null %}
@@ -162,20 +176,41 @@
                 <th class="text-end">Ore lavorate</th>
                 <th class="text-end">Saldo mese</th>
                 <th class="text-end">Saldo progressivo</th>
+                {% if celleEditabili %}<th class="text-end">Azioni</th>{% endif %}
             </tr>
         </thead>
         <tbody>
             {% for s in saldi %}
                 <tr>
-                    <td><strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}</td>
+                    <td>
+                        <strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}
+                        {% if s.aggiunto_manualmente %}
+                            <span class="badge bg-info text-dark" title="{{ s.setting_nome }}">in itinere</span>
+                        {% endif %}
+                    </td>
                     <td>{{ s.categoria_nome }}</td>
                     <td class="text-end">{{ s.ore_dovute }}</td>
                     <td class="text-end">{{ s.ore_lavorate }}</td>
                     <td class="text-end {% if s.saldo_mese < 0 %}text-danger{% endif %}">{{ s.saldo_mese }}</td>
                     <td class="text-end {% if s.saldo_progressivo < 0 %}text-danger{% endif %}">{{ s.saldo_progressivo }}</td>
+                    {% if celleEditabili %}
+                        <td class="text-end text-nowrap">
+                            <a href="{{ url('/piani-turno/' ~ piano.id ~ '/saldi/' ~ s.saldo_id ~ '/edit') }}"
+                               class="btn btn-sm btn-outline-secondary">Modifica</a>
+                            {% if s.aggiunto_manualmente %}
+                                <form method="post"
+                                      action="{{ url('/piani-turno/' ~ piano.id ~ '/operatori/' ~ s.id_operatore ~ '/rimuovi') }}"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Rimuovere {{ s.operatore_cognome }} {{ s.operatore_nome }} dal piano? L\'operazione fallisce se ha turni assegnati.');">
+                                    {{ csrf_field() }}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Rimuovi</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    {% endif %}
                 </tr>
             {% else %}
-                <tr><td colspan="6" class="text-center text-muted">Nessun saldo registrato.</td></tr>
+                <tr><td colspan="{{ celleEditabili ? 7 : 6 }}" class="text-center text-muted">Nessun saldo registrato.</td></tr>
             {% endfor %}
         </tbody>
     </table>

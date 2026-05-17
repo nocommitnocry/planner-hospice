@@ -7,6 +7,7 @@ use App\Helpers\Container;
 use App\Helpers\Database;
 use App\Helpers\Logger;
 use App\Models\OperatoreModel;
+use App\Models\PianoOperatoreModel;
 use App\Models\PianoTurnoModel;
 use App\Models\SaldoOreModel;
 use App\Models\TipoTurnoModel;
@@ -42,6 +43,7 @@ final class TurniController extends BaseController
     private TipoTurnoModel $tipi;
     private OperatoreModel $operatori;
     private SaldoOreModel $saldi;
+    private PianoOperatoreModel $pianoOperatori;
     private SaldoRicalcoloService $ricalcolo;
     private Database $db;
 
@@ -53,6 +55,7 @@ final class TurniController extends BaseController
         $this->tipi = new TipoTurnoModel();
         $this->operatori = new OperatoreModel();
         $this->saldi = new SaldoOreModel();
+        $this->pianoOperatori = new PianoOperatoreModel();
         $this->ricalcolo = new SaldoRicalcoloService($this->saldi, $this->turni);
         $this->db = Container::instance()->get(Database::class);
     }
@@ -281,8 +284,12 @@ final class TurniController extends BaseController
 
     /**
      * Verifica che (operatore, data) siano coerenti col piano: esistono,
-     * la data cade nel mese, l'operatore ha un saldo iniziale per il piano.
+     * la data cade nel mese, l'operatore è incluso nel piano.
      * Ritorna null se ok, altrimenti il messaggio di errore.
+     *
+     * Dalla 4-ter l'appartenenza è tracciata in `piano_operatori`: include
+     * sia i fotografati dalla create che gli aggiunti manualmente in itinere
+     * (anche cross-setting).
      *
      * @param array<string,mixed> $piano
      */
@@ -301,22 +308,11 @@ final class TurniController extends BaseController
         if ((int) $dt->format('Y') !== (int) $piano['anno'] || (int) $dt->format('n') !== (int) $piano['mese']) {
             return 'La data non appartiene al mese del piano.';
         }
-        $op = $this->operatori->find($idOperatore);
-        if ($op === null) {
+        if ($this->operatori->find($idOperatore) === null) {
             return 'Operatore non trovato.';
         }
-        if ((int) $op['id_setting'] !== (int) $piano['id_setting']) {
-            // Cross-setting non ancora gestito: il flusso "aggiungi operatore al piano"
-            // arriverà nella sessione 4-ter.
-            return 'L\'operatore non appartiene al setting di questo piano.';
-        }
-        $saldoOp = $this->saldi->findOneBy([
-            'id_operatore' => $idOperatore,
-            'anno'         => (int) $piano['anno'],
-            'mese'         => (int) $piano['mese'],
-        ]);
-        if ($saldoOp === null) {
-            return 'L\'operatore non risulta nel piano (nessun saldo iniziale).';
+        if (!$this->pianoOperatori->isInPiano((int) $piano['id'], $idOperatore)) {
+            return 'L\'operatore non è incluso in questo piano. Aggiungilo dal piano (azione «+ Aggiungi operatore»).';
         }
         return null;
     }
@@ -337,20 +333,10 @@ final class TurniController extends BaseController
             $errors['data'][] = 'La data non appartiene al mese del piano.';
         }
 
-        $op = $this->operatori->find($idOperatore);
-        if ($op === null) {
+        if ($this->operatori->find($idOperatore) === null) {
             $errors['id_operatore'][] = 'Operatore non trovato.';
-        } elseif ((int) $op['id_setting'] !== (int) $piano['id_setting']) {
-            $errors['id_operatore'][] = 'L\'operatore non appartiene al setting di questo piano.';
-        } else {
-            $saldoOp = $this->saldi->findOneBy([
-                'id_operatore' => $idOperatore,
-                'anno'         => (int) $piano['anno'],
-                'mese'         => (int) $piano['mese'],
-            ]);
-            if ($saldoOp === null) {
-                $errors['id_operatore'][] = 'L\'operatore non è incluso in questo piano.';
-            }
+        } elseif (!$this->pianoOperatori->isInPiano((int) $piano['id'], $idOperatore)) {
+            $errors['id_operatore'][] = 'L\'operatore non è incluso in questo piano.';
         }
 
         if ($this->tipi->find($idTipoTurno) === null) {

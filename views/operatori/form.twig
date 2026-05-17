@@ -91,6 +91,28 @@
                     {% endif %}
                 </div>
 
+                <div class="col-md-6">
+                    <label for="data_assunzione" class="form-label">Data assunzione</label>
+                    <input type="date" id="data_assunzione" name="data_assunzione"
+                           class="form-control{% if form_errors.data_assunzione %} is-invalid{% endif %}"
+                           value="{{ old_input.data_assunzione ?? operatore.data_assunzione ?? '' }}">
+                    {% if form_errors.data_assunzione %}
+                        <div class="invalid-feedback">{{ form_errors.data_assunzione|first }}</div>
+                    {% endif %}
+                    <div class="form-text">Informativa. Operatori non ancora assunti non vengono fotografati nei piani del mese.</div>
+                </div>
+
+                <div class="col-md-6">
+                    <label for="data_cessazione" class="form-label">Data cessazione</label>
+                    <input type="date" id="data_cessazione" name="data_cessazione"
+                           class="form-control{% if form_errors.data_cessazione %} is-invalid{% endif %}"
+                           value="{{ old_input.data_cessazione ?? operatore.data_cessazione ?? '' }}">
+                    {% if form_errors.data_cessazione %}
+                        <div class="invalid-feedback">{{ form_errors.data_cessazione|first }}</div>
+                    {% endif %}
+                    <div class="form-text">Informativa. Le ore residue del mese di cessazione vanno regolate a mano dal saldo del piano.</div>
+                </div>
+
                 <div class="col-md-7">
                     <label for="email" class="form-label">Email</label>
                     <input type="email" id="email" name="email" maxlength="150"

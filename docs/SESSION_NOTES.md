@@ -310,3 +310,85 @@ Dalla conversazione di dominio del 2026-05-13 è emerso che il modello "un solo 
 ### Prossima sessione (4-ter)
 
 Operatori in itinere + saldi editabili. Azione «Aggiungi operatore al piano» (con `ore_dovute` e `saldo_progressivo_iniziale` editabili); modifica `ore_dovute` su saldi esistenti (pro-rata, recuperi); aggancio del `saldo_progressivo` al numero del cedolino comunicato dall'operatore. Note libere obbligatorie sulle modifiche manuali. A quel punto il check "operatore non appartiene al setting" del calendario diventerà permissivo: l'operatore di un altro setting si potrà aggiungere esplicitamente al piano.
+
+---
+
+## Sessione 4-ter — 2026-05-17 — Operatori in itinere + saldi editabili
+
+### Cosa è stato fatto
+
+- **Migrazione `0003_operatori_dates_piano_operatori.sql`**:
+  - `operatori.data_assunzione DATE NULL`, `operatori.data_cessazione DATE NULL` (informative, niente pro-rata automatico).
+  - Nuova tabella `piano_operatori (id_piano, id_operatore, aggiunto_manualmente, aggiunto_da, note_aggiunta)` con UNIQUE `(id_piano, id_operatore)`, CASCADE da `piano_turni`. Materializza l'appartenenza di un operatore a un piano specifico (prima era implicita "di casa nel setting"). Backfill: ogni saldo esistente in (anno, mese) viene legato al piano di quello stesso (anno, mese) il cui setting coincide col setting di casa dell'operatore.
+  - Nuova tabella `saldo_modifiche (id_saldo, id_utente, tipo_modifica, valore_precedente, valore_nuovo, note NOT NULL)`: storico delle modifiche manuali per ore_dovute, saldo_progressivo e aggiunta esplicita.
+  - `schema.sql` aggiornato di conseguenza per nuovi install.
+- **Operatori — date informative**: `OperatoreModel.fillable` esteso a `data_assunzione`/`data_cessazione`. Nuovi metodi `findInServizioNelMese(anno, mese, ?idSetting)` (filtro: attivi + non cessati pre-mese + non ancora da assumere post-mese) e `findCandidatiAggiunta(idPiano, anno, mese)` (in servizio nel mese, non già in `piano_operatori`, ammessi anche da altro setting). Form operatore con due input `date` + helper text. `OperatoreValidator` valida le date `Y-m-d` opzionali con coerenza `cessazione >= assunzione`. Nuova regola `Rules::date()` con round-trip per scartare le date "morbide" (es. 2026-02-31).
+- **Nuovi Model**:
+  - `PianoOperatoreModel`: fillable + `listInPiano(idPiano, anno, mese)` (JOIN operatori + categoria + setting + LEFT JOIN saldo del mese, ordinato per categoria → cognome → nome), `isInPiano`, `findInPiano`, `listOperatoriInAltriPianiDelMese(idPianoEscluso, anno, mese)`, `countTurniOperatoreInPiano`.
+  - `SaldoModificaModel`: `listBySaldo(idSaldo)` joinato con utenti per la UI storico.
+- **`PianiTurnoController.store`** ora fotografa con `findInServizioNelMese` (filtro automatico per assunti/cessati) e popola `piano_operatori` per ogni operatore fotografato. Se il saldo (op, anno, mese) esiste già (perché l'op è in itinere nell'altro piano del mese: il saldo è unico cross-setting) NON viene ricreato.
+- **`PianiTurnoController.show`** non filtra più per `id_setting`: usa `PianoOperatoreModel.listInPiano` come fonte di verità. Mostra badge "in itinere · <setting>" per gli operatori aggiunti manualmente che provengono da altro setting.
+- **`PianiTurnoController.destroy`**: il saldo è cross-piano (unico per op/anno/mese), quindi va eliminato SOLO per gli operatori che non sono presenti in altri piani dello stesso mese (`SaldoOreModel.deleteByAnnoMeseEscludendoOperatori`). `deleteByAnnoMese` rimosso. CASCADE su `piano_operatori` pulisce la tabella di appartenenza in automatico.
+- **Nuovo `SaldiController`** (admin + caposala, solo piani in bozza, ogni mutazione registra una riga in `saldo_modifiche` con nota motivazione obbligatoria a livello applicativo):
+  - `addOperatoreForm` / `addOperatore`: seleziona un candidato (lista da `findCandidatiAggiunta`), imposta `ore_dovute` e `saldo_progressivo_iniziale`, salva nota. Crea saldo SOLO se non esiste già (rispetto saldo cross-setting); crea riga `piano_operatori` con `aggiunto_manualmente=1`; logga `tipo_modifica='aggiunta_operatore'`.
+  - `editForm` / `update`: modifica `ore_dovute` e/o `saldo_progressivo` di un saldo esistente con nota obbligatoria. Se cambia `ore_dovute` rilancia `SaldoRicalcoloService::ricalcola` (le ore lavorate restano, cambia saldo_mese → propagazione progressivo). Se cambia `saldo_progressivo` lo scrive direttamente e poi `propagaDaQui` ricostruisce i mesi successivi. I check di no-op silenzioso (valori identici a quelli attuali) sono espliciti.
+  - `removeOperatore`: rimuove un operatore solo se `aggiunto_manualmente=1` e non ha turni nel piano. Elimina il saldo solo se l'op non è in altri piani dello stesso mese (regola simmetrica alla destroy del piano).
+- **`SaldoValidator`** dedicato con due flussi distinti (`validateAggiunta`, `validateModifica`), nota sempre obbligatoria, almeno uno tra ore_dovute/saldo_progressivo richiesto in update.
+- **`TurniController`**: il veto "L'operatore non appartiene al setting di questo piano" è stato rimosso. Ora la verifica unica di appartenenza è `PianoOperatoreModel.isInPiano(idPiano, idOperatore)`, che copre sia fotografati che aggiunti in itinere — anche cross-setting. Messaggio di errore aggiornato: "Aggiungilo dal piano (azione «+ Aggiungi operatore»)".
+- **`SaldoRicalcoloService`**: nuovo metodo pubblico `propagaDaQui(op, anno, mese, progressivoCorrente)` che espone la propagazione esistente per il caso "reset di verità" del progressivo.
+- **Rotte** sotto `/piani-turno/{id}`:
+  - `GET /aggiungi-operatore` + `POST /aggiungi-operatore`
+  - `POST /operatori/{opid}/rimuovi`
+  - `GET /saldi/{sid}/edit` + `POST /saldi/{sid}`
+- **Viste**:
+  - `views/saldi/add_operatore.twig`: select candidati con etichetta `cognome nome — categoria (setting)`, ore_dovute, saldo_progressivo iniziale, nota obbligatoria.
+  - `views/saldi/edit.twig`: modifica ore_dovute / saldo_progressivo, nota obbligatoria, tabella storico modifiche con tipo, utente, valori prima/dopo, nota.
+  - `views/piani_turno/show.twig`: bottone "+ Aggiungi operatore" sopra il calendario (solo se editabile); colonna "Azioni" nella tabella saldi (Modifica + Rimuovi per i `aggiunto_manualmente`); badge "in itinere" sulle righe.
+  - `views/operatori/form.twig`: input date per assunzione/cessazione con form-text che chiarisce la semantica ("informativa, niente pro-rata automatico").
+  - `views/dashboard/index.twig`: banner aggiornato a sessione 4-ter.
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Appartenenza op→piano | Materializzata in `piano_operatori`. Fotografata alla create per gli "di casa", aggiunta manualmente per gli in itinere. Il check di sicurezza dei turni passa da "stesso setting" a "deve essere in `piano_operatori`" |
+| Saldo cross-setting | Tabella `saldo_ore` invariata: UNIQUE su `(op, anno, mese)`, valori unici cross-piano. La "appartenenza al piano" non cambia: cambia solo da quali piani il saldo è visibile |
+| Date assunzione/cessazione | Solo informative + filtro automatico nel fotografa-operatori del create. Niente pro-rata automatico: la riduzione delle ore_dovute si fa a mano via "Modifica saldo" (coerente con il principio "numero giusto a mano, niente automatismi opachi") |
+| Saldo già esistente in aggiunta | Quando si aggiunge in itinere un op che ha già un saldo (perché è anche nell'altro piano del mese) NON si sovrascrive: si crea solo la riga `piano_operatori`. I valori "iniziali" inseriti dall'utente vengono ignorati. Coerente col fatto che il saldo è unico cross-setting |
+| Nota motivazione | Obbligatoria a livello applicativo (`NOT NULL` nel DB) per ogni modifica manuale. Sale in `saldo_modifiche` insieme a valori prima/dopo e id_utente |
+| Reset progressivo | Va scritto direttamente (NON ricalcolato dalle ore mese), POI propagato ai mesi successivi via `propagaDaQui`. Caso d'uso: aggancio al numero del cedolino comunicato dall'operatore |
+| Rimozione operatore | Permessa solo per `aggiunto_manualmente=1` e con zero turni nel piano. Gli operatori fotografati restano legati al piano per coerenza con la fotografia originale: se vanno tolti, eliminare il piano e ricreare |
+| Destroy piano | Elimina saldi solo per op non presenti in altri piani dello stesso mese. CASCADE su `piano_operatori` (FK piano) pulisce automaticamente la tabella di appartenenza |
+| Propagazione progressivo da update | `ricalcola` viene chiamata quando cambia `ore_dovute` (perché cambia saldo_mese); `propagaDaQui` quando cambia direttamente `saldo_progressivo`. Ordine in transazione: prima ricalcola (overwrite progressivo dal saldo_mese), poi imposta il nuovo `saldo_progressivo` (se richiesto) e propaga |
+| FK `piano_op_operatore` RESTRICT | Eliminare un operatore con appartenenze attive in piani fallisce (preserva storico). Si forza prima `attivo=0` o si rimuove dai piani in bozza |
+| PDO posizionali nel DELETE batch | `deleteByAnnoMeseEscludendoOperatori` usa `?` posizionali con `IN (?,?,?...)` per evitare riuso named placeholder (feedback memory PDO) |
+
+### Da fare prima della prossima sessione (lato utente)
+
+1. **Backup del DB** (la migrazione 0003 aggiunge colonne e tabelle ma fa anche un backfill):
+   ```bash
+   mysqldump -u hospice_user -p hospice_turni > backup-pre-0003-$(date +%Y%m%d).sql
+   ```
+2. **Applicare la migrazione**:
+   ```bash
+   mysql -u hospice_user -p hospice_turni < database/migrations/0003_operatori_dates_piano_operatori.sql
+   ```
+3. `composer dump-autoload` (per assicurare classmap dei nuovi `SaldiController`, `PianoOperatoreModel`, `SaldoModificaModel`, `SaldoValidator`).
+4. Riavviare `php -S localhost:8000 -t public/` e con utente **admin** o **caposala**:
+   - `/operatori` → modifica un paio di operatori valorizzando `data_assunzione`. Su uno valorizza anche `data_cessazione` con data del mese corrente e un altro con data del mese precedente.
+   - Crea un nuovo piano `Hospice` per il **prossimo** mese: l'operatore cessato nel mese precedente NON deve comparire nella fotografia. L'operatore assunto nel mese corrente sì.
+   - Su un piano in bozza esistente: bottone **+ Aggiungi operatore** sopra il calendario. La lista candidati include operatori di entrambi i setting (purché non già in piano e in servizio nel mese). Aggiungine uno dall'altro setting con `ore_dovute = 80` e `saldo_progressivo = 0`, nota "spostamento per copertura ferie".
+   - Sulla tabella saldi compare la nuova riga col badge **in itinere**. Cliccare **Modifica** sulla riga di un operatore qualsiasi: form con storico vuoto al primo accesso. Cambia `ore_dovute` da 165 a 132, nota "cessazione 15/05 — 132h dovute residue". Verificare che `saldo_mese` si aggiorni e che il `saldo_progressivo` dei mesi successivi (se ci sono) si propaghi.
+   - Modifica `saldo_progressivo` con un valore arbitrario (es. da -8.00 a +4.00) e nota "aggancio cedolino aprile". Lo storico modifiche deve mostrare due righe. Se ci sono mesi successivi, i loro progressivi devono essere ricostruiti a partire dal nuovo valore.
+   - Cliccare il calendario di una cella dell'operatore aggiunto in itinere → assegna un turno. Deve funzionare (il vecchio veto "non appartiene al setting" è andato).
+   - Provare a **Rimuovere** l'operatore aggiunto in itinere DOPO avergli messo un turno: deve fallire con messaggio "rimuovi prima i turni assegnati". Eliminare il turno e ritentare: deve succedere.
+   - Provare a Rimuovere un operatore fotografato (non `aggiunto_manualmente`): deve fallire con messaggio dedicato.
+   - Pubblicare il piano: bottoni "+ Aggiungi operatore" e Modifica/Rimuovi devono sparire.
+   - Caso cross-piano dello stesso mese: crea due piani (Hospice e UCP-DOM) dello stesso mese, aggiungi lo stesso operatore in itinere in entrambi (NB: la seconda aggiunta non ricrea il saldo, riusa quello esistente). Elimina uno dei due piani in bozza: il saldo deve rimanere intatto perché l'op è ancora nell'altro piano.
+5. Loggarsi con **visualizzatore**: deve vedere la tabella saldi senza la colonna **Azioni** né i bottoni di aggiunta. URL manipolati (`/piani-turno/{id}/saldi/{sid}/edit`) devono dare 403.
+
+### Prossima sessione (4-quater)
+
+Cross-setting view: nel calendario del mio piano, gli operatori che hanno turni nell'altro piano dello stesso mese vengono mostrati con overlay grigio non cliccabile (tooltip con setting di origine). Serve per pianificare senza sbattere contro l'UNIQUE `(operatore, data)`. Probabilmente sub-sessione corta perché tutto il modello è già in posto (4-bis + 4-ter).
+
+Poi 4-quinquies (CRUD `assenze` + flag `tipi_turno.esclude_pianificazione` per maternità nascoste), poi 5 (vincoli bloccanti), poi 6 (generatore automatico).

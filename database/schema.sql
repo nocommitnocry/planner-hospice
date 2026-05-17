@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS operatori (
     id_categoria INT NOT NULL,
     id_setting INT NOT NULL COMMENT 'Setting "di casa": cambiare = spostamento lungo (mesi/anni)',
     ore_contrattuali_mensili DECIMAL(6,2) NOT NULL DEFAULT 165.00,
+    data_assunzione DATE NULL COMMENT 'Informativo: niente pro-rata automatico',
+    data_cessazione DATE NULL COMMENT 'Operatori cessati pre-mese non vengono fotografati nel piano',
     email VARCHAR(150),
     telefono VARCHAR(30),
     note TEXT,
@@ -114,7 +116,8 @@ CREATE TABLE IF NOT EXISTS operatori (
         REFERENCES setting(id) ON DELETE RESTRICT,
     INDEX idx_operatori_cognome (cognome, nome),
     INDEX idx_operatori_attivo (attivo),
-    INDEX idx_operatori_setting (id_setting)
+    INDEX idx_operatori_setting (id_setting),
+    INDEX idx_operatori_cessazione (data_cessazione)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
@@ -223,6 +226,32 @@ CREATE TABLE IF NOT EXISTS assenze (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
+-- Piano operatori: appartenenza esplicita di un operatore a un piano.
+--
+-- Fino alla 4-bis era implicita (operatori "di casa" nel setting del piano);
+-- dalla 4-ter è materializzata in tabella per consentire l'aggiunta esplicita
+-- in itinere di operatori dell'altro setting o assunti dopo la create.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS piano_operatori (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    id_piano INT NOT NULL,
+    id_operatore INT NOT NULL,
+    aggiunto_manualmente BOOLEAN NOT NULL DEFAULT FALSE COMMENT '0=fotografato dalla create, 1=aggiunto in itinere',
+    aggiunto_da INT NULL,
+    note_aggiunta TEXT NULL,
+    creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_piano_op_piano FOREIGN KEY (id_piano)
+        REFERENCES piano_turni(id) ON DELETE CASCADE,
+    CONSTRAINT fk_piano_op_operatore FOREIGN KEY (id_operatore)
+        REFERENCES operatori(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_piano_op_aggiunto_da FOREIGN KEY (aggiunto_da)
+        REFERENCES utenti(id) ON DELETE SET NULL,
+    UNIQUE KEY uk_piano_operatore (id_piano, id_operatore),
+    INDEX idx_piano_op_piano (id_piano),
+    INDEX idx_piano_op_operatore (id_operatore)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
 -- Saldo ore (riepilogo mensile per operatore)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS saldo_ore (
@@ -245,6 +274,29 @@ CREATE TABLE IF NOT EXISTS saldo_ore (
         REFERENCES operatori(id) ON DELETE CASCADE,
     UNIQUE KEY uk_saldo_operatore_periodo (id_operatore, anno, mese),
     INDEX idx_saldo_periodo (anno, mese)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- Saldo modifiche: storico delle modifiche manuali ai saldi (audit).
+--
+-- Una riga per ogni intervento manuale su ore_dovute / saldo_progressivo o
+-- per l'aggiunta esplicita di un operatore al piano (con valori iniziali
+-- custom). Nota motivazione obbligatoria a livello applicativo.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS saldo_modifiche (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    id_saldo INT NOT NULL,
+    id_utente INT NULL,
+    tipo_modifica ENUM('ore_dovute', 'saldo_progressivo', 'aggiunta_operatore') NOT NULL,
+    valore_precedente DECIMAL(6,2) NULL,
+    valore_nuovo DECIMAL(6,2) NULL,
+    note TEXT NOT NULL,
+    creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_saldomod_saldo FOREIGN KEY (id_saldo)
+        REFERENCES saldo_ore(id) ON DELETE CASCADE,
+    CONSTRAINT fk_saldomod_utente FOREIGN KEY (id_utente)
+        REFERENCES utenti(id) ON DELETE SET NULL,
+    INDEX idx_saldomod_saldo (id_saldo, creato_il)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------

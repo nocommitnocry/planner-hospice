@@ -91,6 +91,19 @@ final class SaldoRicalcoloService
         $this->propagaProgressivo($idOperatore, $anno, $mese, $saldoProg);
     }
 
+    /**
+     * Propaga il saldo_progressivo ai mesi successivi a partire da un valore
+     * imposto manualmente (4-ter: "reset di verità" da cedolino).
+     *
+     * Va chiamato DOPO aver scritto il nuovo `saldo_progressivo` nel mese
+     * indicato; questo metodo ricostruisce solo i progressivi dei mesi
+     * successivi (le ore degli altri mesi non vengono toccate).
+     */
+    public function propagaDaQui(int $idOperatore, int $anno, int $mese, float $progressivoCorrente): void
+    {
+        $this->propagaProgressivo($idOperatore, $anno, $mese, $progressivoCorrente);
+    }
+
     private function propagaProgressivo(int $idOperatore, int $anno, int $mese, float $progressivoCorrente): void
     {
         $progPrec = $progressivoCorrente;
