@@ -25,8 +25,15 @@ use App\Models\TurnoModel;
  * saldo_mese        = (lavorate + ferie + permessi + malattia + formazione) - ore_dovute
  * saldo_progressivo = saldo_progressivo del mese precedente + saldo_mese
  *
- * I mesi successivi (se esistono) vengono propagati ricalcolando solo
- * saldo_progressivo (le loro ore non cambiano).
+ * API pubblica (sessione 4-quater: split di `ricalcola`):
+ *  - `ricalcolaMese`: ricalcola SOLO il mese corrente (ore e saldi) dai turni
+ *    effettivi e ritorna il nuovo `saldo_progressivo`. Non propaga.
+ *  - `propagaDaQui`: propaga ai mesi successivi a partire da un valore dato
+ *    (uso: reset di verità manuale del progressivo).
+ *  - `ricalcola`: wrapper di comodo (uso primario da `TurniController`) che
+ *    combina i due.
+ *  - `rimuoviSaldoSeOrfano`: cancella il saldo se l'operatore non è in altri
+ *    piani dello stesso mese e ricalcola la catena dei progressivi successivi.
  */
 final class SaldoRicalcoloService
 {
@@ -38,7 +45,14 @@ final class SaldoRicalcoloService
     ) {
     }
 
-    public function ricalcola(int $idOperatore, int $anno, int $mese): void
+    /**
+     * Ricalcola le ore e il saldo_mese/saldo_progressivo del mese indicato
+     * dai turni effettivi. NON propaga ai mesi successivi.
+     *
+     * Ritorna il nuovo saldo_progressivo (utile per chi vuole poi propagare).
+     * Ritorna null se il saldo del mese non esiste.
+     */
+    public function ricalcolaMese(int $idOperatore, int $anno, int $mese): ?float
     {
         $saldo = $this->saldi->findOneBy([
             'id_operatore' => $idOperatore,
@@ -46,7 +60,7 @@ final class SaldoRicalcoloService
             'mese'         => $mese,
         ]);
         if ($saldo === null) {
-            return;
+            return null;
         }
 
         $oreLavorate = 0.0;
@@ -88,7 +102,16 @@ final class SaldoRicalcoloService
             'saldo_progressivo' => $this->fmt($saldoProg),
         ]);
 
-        $this->propagaProgressivo($idOperatore, $anno, $mese, $saldoProg);
+        return $saldoProg;
+    }
+
+    public function ricalcola(int $idOperatore, int $anno, int $mese): void
+    {
+        $progressivo = $this->ricalcolaMese($idOperatore, $anno, $mese);
+        if ($progressivo === null) {
+            return;
+        }
+        $this->propagaProgressivo($idOperatore, $anno, $mese, $progressivo);
     }
 
     /**
@@ -102,6 +125,47 @@ final class SaldoRicalcoloService
     public function propagaDaQui(int $idOperatore, int $anno, int $mese, float $progressivoCorrente): void
     {
         $this->propagaProgressivo($idOperatore, $anno, $mese, $progressivoCorrente);
+    }
+
+    /**
+     * Cancella il saldo (op, anno, mese) SE l'operatore non è presente in altri
+     * piani dello stesso mese, e in tal caso ricalcola la catena dei progressivi
+     * dei mesi successivi (sottraendo di fatto il saldo_mese che è sparito).
+     *
+     * Va chiamato dentro la stessa transazione del flusso chiamante.
+     *
+     * @param list<int> $operatoriInAltriPianiDelMese Lista degli id_operatore
+     *        che compaiono in piani del mese diversi da quello in cui stiamo
+     *        operando. Se $idOperatore è in questa lista, il saldo NON viene
+     *        toccato (resta valido per gli altri piani).
+     */
+    public function rimuoviSaldoSeOrfano(
+        int $idOperatore,
+        int $anno,
+        int $mese,
+        array $operatoriInAltriPianiDelMese,
+    ): void {
+        if (in_array($idOperatore, $operatoriInAltriPianiDelMese, true)) {
+            return;
+        }
+
+        $saldo = $this->saldi->findOneBy([
+            'id_operatore' => $idOperatore,
+            'anno'         => $anno,
+            'mese'         => $mese,
+        ]);
+        if ($saldo === null) {
+            return;
+        }
+
+        // Progressivo "di partenza" per la catena successiva = quello del mese
+        // PRECEDENTE a quello che sto eliminando. Così i mesi successivi non
+        // includono più il saldo_mese del mese cancellato.
+        $progPrev = (float) $this->saldi->getProgressivoPrevious($idOperatore, $anno, $mese);
+
+        $this->saldi->delete((int) $saldo['id']);
+
+        $this->propagaDaQui($idOperatore, $anno, $mese, $progPrev);
     }
 
     private function propagaProgressivo(int $idOperatore, int $anno, int $mese, float $progressivoCorrente): void

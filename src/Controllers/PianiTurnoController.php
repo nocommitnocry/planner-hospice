@@ -14,6 +14,7 @@ use App\Models\SettingModel;
 use App\Models\TurnoModel;
 use App\Routing\Request;
 use App\Routing\Response;
+use App\Services\SaldoRicalcoloService;
 use App\Validators\PianoTurnoValidator;
 use PDOException;
 
@@ -41,6 +42,7 @@ final class PianiTurnoController extends BaseController
     private TurnoModel $turni;
     private SettingModel $settings;
     private PianoOperatoreModel $pianoOperatori;
+    private SaldoRicalcoloService $ricalcolo;
     private Database $db;
 
     private const MESI_IT = [
@@ -58,6 +60,7 @@ final class PianiTurnoController extends BaseController
         $this->turni = new TurnoModel();
         $this->settings = new SettingModel();
         $this->pianoOperatori = new PianoOperatoreModel();
+        $this->ricalcolo = new SaldoRicalcoloService($this->saldi, $this->turni);
         $this->db = Container::instance()->get(Database::class);
     }
 
@@ -309,14 +312,28 @@ final class PianiTurnoController extends BaseController
         // Il piano è in bozza: lavoro in corso, niente blocchi rigidi.
         // - CASCADE su `fk_turni_piano` pulisce i turni del piano.
         // - CASCADE su `fk_piano_op_piano` pulisce piano_operatori.
-        // - I saldi sono cross-piano (unici per op/anno/mese): vanno eliminati
-        //   SOLO per gli operatori che non sono in altri piani dello stesso
-        //   mese (così se l'op è in itinere su entrambi i setting, l'altro
-        //   piano resta funzionante).
+        // - I saldi sono cross-piano (unici per op/anno/mese):
+        //     * op non in altri piani del mese → saldo cancellato e catena
+        //       progressivo successiva ricalcolata (helper 4-quater).
+        //     * op anche in altri piani del mese → saldo tenuto, MA ore e
+        //       saldo_mese vanno rifatti dai turni residui (quelli del piano
+        //       appena cancellato sono spariti via CASCADE: senza ricalcolo
+        //       resterebbero gonfiati). Poi si propaga la catena.
         $this->db->transaction(function () use ($id, $anno, $mese): void {
             $opInAltriPiani = $this->pianoOperatori->listOperatoriInAltriPianiDelMese($id, $anno, $mese);
-            $this->saldi->deleteByAnnoMeseEscludendoOperatori($anno, $mese, $id, $opInAltriPiani);
+            // Snapshot degli op del piano PRIMA del CASCADE provocato dal delete.
+            $operatoriDelPiano = $this->pianoOperatori->listIdOperatoriByPiano($id);
+            // Delete prima del loop: il ricalcolo del ramo "in altri piani" deve
+            // vedere SOLO i turni residui (il CASCADE su `fk_turni_piano` li
+            // ha già rimossi a questo punto).
             $this->piani->delete($id);
+            foreach ($operatoriDelPiano as $idOp) {
+                if (in_array($idOp, $opInAltriPiani, true)) {
+                    $this->ricalcolo->ricalcola($idOp, $anno, $mese);
+                } else {
+                    $this->ricalcolo->rimuoviSaldoSeOrfano($idOp, $anno, $mese, $opInAltriPiani);
+                }
+            }
         });
 
         Logger::get()->info('Piano turni eliminato', [

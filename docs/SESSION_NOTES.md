@@ -399,3 +399,56 @@ Roadmap rivista: la sessione 4-quater non è più "overlay cross-setting" ma **r
 Test manuali 1-7 in spec (entrambi i campi update, un solo campo update, rimozione operatore "auto" senza turni, rimozione operatore con turni ancora bloccata, catena progressivo post-cancellazione, destroy con operatore cross-setting, destroy con operatore solo in quel piano).
 
 **Poi:** 4-quinquies (overlay cross-setting), 4-sexies (CRUD `assenze` + flag `tipi_turno.esclude_pianificazione` per maternità nascoste), 5 (vincoli bloccanti), 6 (generatore automatico).
+
+## Sessione 4-quater — 2026-05-18 — Refactor ricalcolo saldi + revisione removeOperatore
+
+### Cosa è stato fatto
+
+- **`SaldoRicalcoloService`** — split di `ricalcola()`:
+  - Nuovo `ricalcolaMese(idOp, anno, mese): ?float` che ricalcola **solo** il mese dai turni effettivi e ritorna il nuovo `saldo_progressivo` (o `null` se il saldo non esiste). NON propaga.
+  - `ricalcola()` resta come wrapper di comodo (uso primario `TurniController`): chiama `ricalcolaMese` + `propagaProgressivo`.
+  - `propagaDaQui()` invariato.
+  - Nuovo `rimuoviSaldoSeOrfano(idOp, anno, mese, opInAltriPianiDelMese)`: se l'op non è in altri piani del mese, cancella il saldo e propaga la catena dei progressivi successivi a partire dal progressivo del mese **precedente** (il mese cancellato sparisce sia come record sia come contributo alla catena).
+- **`SaldiController::update`** — propagazione **unica** a fine transazione con il valore "vincitore":
+  - Se cambia `ore_dovute`: `ricalcolaMese` (riscrive ore_*, saldo_mese, saldo_progressivo dal calcolo).
+  - Se cambia `saldo_progressivo`: UPDATE diretto del valore manuale (sovrascrive eventualmente quello appena calcolato).
+  - Una sola `propagaDaQui` a fine transazione con il valore vincente. Rimosso il commento-pezza "DOPO il ricalcolo".
+- **`SaldiController::removeOperatore`** — gate unico **zero turni** (rimosso il check `aggiunto_manualmente=1`). Caso d'uso sbloccato: dimissione infra-mese di un operatore di casa con turni già spostati su un altro op. Il flag `aggiunto_manualmente` resta informazione storica nella tabella e ora viene loggato anche al momento della rimozione. Label log aggiornata a `(4-quater)`.
+- **`PianoOperatoreModel::listIdOperatoriByPiano(idPiano)`** — nuova: ritorna `list<int>` di id_operatore del piano. Usata dalla `destroy` per fare lo snapshot prima del CASCADE.
+- **`PianiTurnoController::destroy`** — refactor:
+  - Iniettato `SaldoRicalcoloService` nel controller.
+  - Snapshot di `opInAltriPiani` e `operatoriDelPiano` PRIMA del delete.
+  - **Delete del piano PRIMA del loop** (così il ricalcolo del ramo "in altri piani" vede solo i turni residui dopo il CASCADE su `fk_turni_piano`).
+  - Loop per operatore con due rami:
+    - Op in altri piani del mese → `ricalcola(op, anno, mese)` (le ore lavorate vanno rifatte dai turni rimasti, altrimenti restano gonfiate dei turni del piano cancellato).
+    - Op solo nel piano cancellato → `rimuoviSaldoSeOrfano` (delete + propaga catena).
+- **`SaldoOreModel::deleteByAnnoMeseEscludendoOperatori`** rimosso. Sostituito dal loop con helper.
+- **`views/piani_turno/show.twig`** — rimossa la condizione `s.aggiunto_manualmente` sul bottone **Rimuovi**: ora il bottone appare per ogni operatore con saldo, e il gate "zero turni" viene applicato lato controller. Il badge "in itinere" resta per gli aggiunti manualmente (informativo).
+
+### Bug catturato durante i test (Test 6 — operatore cross-setting)
+
+Prima del fix di second-pass: cancellando il piano A in cui l'operatore X aveva turni, il saldo cross-setting non veniva cancellato (corretto, perché X è anche in B), MA le `ore_lavorate` del saldo **non venivano ricalcolate** e restavano gonfiate dei turni del piano A appena rimossi dal CASCADE. La spec originale prevedeva solo `rimuoviSaldoSeOrfano` nel loop, che per gli op cross-setting fa no-op. Aggiunto il ramo `ricalcola` esplicito.
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Split ricalcola | `ricalcolaMese` (solo mese, ritorna progressivo) + `propagaDaQui` (solo catena). `ricalcola` resta come wrapper di comodo |
+| Update saldo doppio | Propagazione unica a fine transazione con il valore "vincitore" (manuale se presente, calcolato altrimenti). Niente doppia propagazione |
+| Rimozione operatore | Gate unico: zero turni nel piano. Il flag `aggiunto_manualmente` non è più condizione di rimovibilità, resta informazione storica nella tabella e nel log |
+| Helper saldo orfano | `SaldoRicalcoloService::rimuoviSaldoSeOrfano` centralizza "delete se non in altri piani del mese + propaga catena". Usato sia da `SaldiController::removeOperatore` sia da `PianiTurnoController::destroy` |
+| Destroy cross-setting (Test 6) | Due rami nel loop di destroy: op cross-setting → `ricalcola` (rifa ore dai turni residui); op solo nel piano → `rimuoviSaldoSeOrfano`. Il delete del piano va PRIMA del loop perché il ricalcolo deve vedere SOLO i turni dopo il CASCADE |
+| Catena progressivo post-cancellazione | Dopo `rimuoviSaldoSeOrfano` i progressivi dei mesi successivi vengono ricostruiti partendo dal progressivo del mese precedente al cancellato. Prima della 4-quater restavano sfasati |
+| `deleteByAnnoMeseEscludendoOperatori` | Rimosso. Sostituito dal loop con helper in `destroy` |
+
+### Da fare prima della prossima sessione (lato utente)
+
+1. `composer dump-autoload` (già eseguito durante la sessione, ma non guasta rifarlo dopo il pull).
+2. Riavviare il server e testare il Test 6 della spec (operatore cross-setting): cancellando il piano A le ore lavorate del saldo devono scendere a quelle dei turni del solo piano B.
+3. Spot-check sugli altri test 1-7 della spec.
+
+### Prossima sessione (4-quinquies) — overlay cross-setting
+
+Nel calendario del piano corrente, per gli operatori del piano che hanno turni nell'altro piano dello stesso mese (cross-setting), mostrarli come overlay grigio non cliccabile con tooltip che indica il setting di origine. Serve a rendere visibili i conflitti potenziali prima di sbatterci contro l'unique `(operatore, data)` su `turni`. Il modello è già in posto (4-bis introduce setting, 4-ter materializza `piano_operatori`), serve solo aggiungere una query "turni dell'op in altri piani del mese" e renderizzare il calendario di conseguenza.
+
+**Poi:** 4-sexies (CRUD `assenze` + flag `tipi_turno.esclude_pianificazione`), 5 (vincoli bloccanti), 6 (generatore automatico).

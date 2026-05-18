@@ -27,8 +27,11 @@ use PDOException;
  *  2. Modificare il saldo di un operatore già nel piano (ore_dovute per
  *     pro-rata di cessazione o recuperi, saldo_progressivo come "reset di
  *     verità" agganciato al cedolino): nota obbligatoria.
- *  3. Rimuovere un operatore aggiunto manualmente (solo se non ha turni nel
- *     piano e solo se era `aggiunto_manualmente=1`).
+ *  3. Rimuovere un operatore dal piano (solo se non ha turni assegnati nel
+ *     piano). Vale sia per gli inclusi alla creazione che per gli aggiunti
+ *     in itinere (4-quater: il flag `aggiunto_manualmente` resta come
+ *     informazione storica nel log, non è più gate di rimovibilità). Caso
+ *     d'uso tipico: dimissione infra-mese di un operatore "di casa".
  *
  * Sicurezza:
  *  - Tutte le mutazioni richiedono admin o caposala (a livello di route).
@@ -268,6 +271,10 @@ final class SaldiController extends BaseController
 
         try {
             $this->db->transaction(function () use ($idSaldo, $saldo, $data, $note, $userId, $cambiaOreDovute, $cambiaProg, $oreDovutePrev, $progPrev): void {
+                $idOp = (int) $saldo['id_operatore'];
+                $anno = (int) $saldo['anno'];
+                $mese = (int) $saldo['mese'];
+
                 if ($cambiaOreDovute) {
                     $this->saldi->update($idSaldo, ['ore_dovute' => (string) $data['ore_dovute']]);
                     $this->modifiche->create([
@@ -278,18 +285,16 @@ final class SaldiController extends BaseController
                         'valore_nuovo'      => (string) $data['ore_dovute'],
                         'note'              => $note,
                     ]);
-                    // Ricalcolo saldo_mese e propagazione (le ore lavorate non
-                    // sono cambiate ma cambia ore_dovute → cambia saldo_mese).
-                    $this->ricalcolo->ricalcola(
-                        (int) $saldo['id_operatore'],
-                        (int) $saldo['anno'],
-                        (int) $saldo['mese'],
-                    );
+                    // Ricalcolo saldo_mese del mese corrente dai turni effettivi.
+                    // NON propaga: la propagazione finale unica avviene sotto.
+                    $progressivoCorrente = $this->ricalcolo->ricalcolaMese($idOp, $anno, $mese);
+                } else {
+                    $progressivoCorrente = (float) $saldo['saldo_progressivo'];
                 }
+
                 if ($cambiaProg) {
-                    // Aggiornamento diretto del progressivo (reset di verità
-                    // agganciato al cedolino). Va fatto DOPO il ricalcolo
-                    // sopra, altrimenti il ricalcolo lo sovrascriverebbe.
+                    // Reset di verità del progressivo (cedolino). Sovrascrive
+                    // l'eventuale valore appena calcolato da ricalcolaMese.
                     $this->saldi->update($idSaldo, ['saldo_progressivo' => (string) $data['saldo_progressivo']]);
                     $this->modifiche->create([
                         'id_saldo'          => $idSaldo,
@@ -299,13 +304,15 @@ final class SaldiController extends BaseController
                         'valore_nuovo'      => (string) $data['saldo_progressivo'],
                         'note'              => $note,
                     ]);
-                    // Propaga il nuovo progressivo ai mesi successivi.
-                    $this->ricalcolo->propagaDaQui(
-                        (int) $saldo['id_operatore'],
-                        (int) $saldo['anno'],
-                        (int) $saldo['mese'],
-                        (float) $data['saldo_progressivo'],
-                    );
+                    $progressivoCorrente = (float) $data['saldo_progressivo'];
+                }
+
+                // Propagazione unica a fine transazione con il valore "vincitore":
+                // manuale se presente, calcolato altrimenti. Se cambiano entrambi,
+                // ricalcolaMese ha già scritto saldo_mese coerente con le ore_dovute
+                // nuove e il progressivo manuale ha priorità.
+                if ($progressivoCorrente !== null) {
+                    $this->ricalcolo->propagaDaQui($idOp, $anno, $mese, $progressivoCorrente);
                 }
             });
         } catch (PDOException $e) {
@@ -327,7 +334,7 @@ final class SaldiController extends BaseController
     }
 
     // -------------------------------------------------------------------------
-    // Rimozione di un operatore aggiunto manualmente
+    // Rimozione di un operatore dal piano (gate unico: zero turni)
     // -------------------------------------------------------------------------
 
     public function removeOperatore(Request $request): Response
@@ -347,13 +354,6 @@ final class SaldiController extends BaseController
         if ($appartenenza === null) {
             return $this->redirect("/piani-turno/{$idPiano}", 'error', 'Operatore non presente in questo piano.');
         }
-        if ((int) $appartenenza['aggiunto_manualmente'] !== 1) {
-            return $this->redirect(
-                "/piani-turno/{$idPiano}",
-                'error',
-                'Si possono rimuovere solo gli operatori aggiunti in itinere. Gli operatori inclusi alla creazione del piano restano legati: per toglierli elimina e ricrea il piano.',
-            );
-        }
         if ($this->pianoOperatori->countTurniOperatoreInPiano($idPiano, $idOp) > 0) {
             return $this->redirect(
                 "/piani-turno/{$idPiano}",
@@ -367,24 +367,21 @@ final class SaldiController extends BaseController
 
         $idAppartenenza = (int) $appartenenza['id'];
         $this->db->transaction(function () use ($idAppartenenza, $idPiano, $idOp, $anno, $mese): void {
-            $this->pianoOperatori->delete($idAppartenenza);
-            // Se l'op non è in nessun altro piano dello stesso mese, eliminiamo
-            // anche il saldo per evitare residui orfani.
+            // 1. Leggiamo PRIMA chi è in altri piani del mese (ordine simmetrico
+            //    a PianiTurnoController::destroy).
             $opInAltri = $this->pianoOperatori->listOperatoriInAltriPianiDelMese($idPiano, $anno, $mese);
-            if (!in_array($idOp, $opInAltri, true)) {
-                $saldo = $this->saldi->findOneBy([
-                    'id_operatore' => $idOp,
-                    'anno'         => $anno,
-                    'mese'         => $mese,
-                ]);
-                if ($saldo !== null) {
-                    $this->saldi->delete((int) $saldo['id']);
-                }
-            }
+            // 2. Rimuoviamo l'appartenenza al piano corrente.
+            $this->pianoOperatori->delete($idAppartenenza);
+            // 3. Se il saldo non serve a nessun altro piano del mese, lo cancelliamo
+            //    e ricalcoliamo la catena dei progressivi futuri.
+            $this->ricalcolo->rimuoviSaldoSeOrfano($idOp, $anno, $mese, $opInAltri);
         });
 
-        Logger::get()->info('Operatore rimosso dal piano (4-ter)', [
-            'piano' => $idPiano, 'operatore' => $idOp, 'user_id' => $this->currentUserId(),
+        Logger::get()->info('Operatore rimosso dal piano (4-quater)', [
+            'piano'                => $idPiano,
+            'operatore'            => $idOp,
+            'aggiunto_manualmente' => (int) $appartenenza['aggiunto_manualmente'],
+            'user_id'              => $this->currentUserId(),
         ]);
         return $this->redirect("/piani-turno/{$idPiano}", 'success', 'Operatore rimosso dal piano.');
     }

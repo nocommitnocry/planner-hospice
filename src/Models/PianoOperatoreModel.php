@@ -109,8 +109,26 @@ final class PianoOperatoreModel extends BaseModel
     }
 
     /**
+     * Id degli operatori inclusi in un piano (lista piatta).
+     *
+     * Va letta PRIMA di `delete($idPiano)` perché il CASCADE su `fk_piano_op_piano`
+     * pulisce `piano_operatori` insieme al piano. Usata dalla destroy per
+     * iterare gli operatori e ripulire i saldi orfani.
+     *
+     * @return list<int> id_operatore
+     */
+    public function listIdOperatoriByPiano(int $idPiano): array
+    {
+        $rows = $this->db->query(
+            "SELECT id_operatore FROM piano_operatori WHERE id_piano = :id_piano",
+            ['id_piano' => $idPiano],
+        );
+        return array_map(static fn ($r) => (int) $r['id_operatore'], $rows);
+    }
+
+    /**
      * Conta i turni di un operatore in un piano specifico. Usato per decidere
-     * se l'op aggiunto manualmente può essere rimosso (no turni residui).
+     * se l'op può essere rimosso (no turni residui).
      */
     public function countTurniOperatoreInPiano(int $idPiano, int $idOperatore): int
     {

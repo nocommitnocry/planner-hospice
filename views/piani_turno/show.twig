@@ -197,15 +197,13 @@
                         <td class="text-end text-nowrap">
                             <a href="{{ url('/piani-turno/' ~ piano.id ~ '/saldi/' ~ s.saldo_id ~ '/edit') }}"
                                class="btn btn-sm btn-outline-secondary">Modifica</a>
-                            {% if s.aggiunto_manualmente %}
-                                <form method="post"
-                                      action="{{ url('/piani-turno/' ~ piano.id ~ '/operatori/' ~ s.id_operatore ~ '/rimuovi') }}"
-                                      class="d-inline"
-                                      onsubmit="return confirm('Rimuovere {{ s.operatore_cognome }} {{ s.operatore_nome }} dal piano? L\'operazione fallisce se ha turni assegnati.');">
-                                    {{ csrf_field() }}
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Rimuovi</button>
-                                </form>
-                            {% endif %}
+                            <form method="post"
+                                  action="{{ url('/piani-turno/' ~ piano.id ~ '/operatori/' ~ s.id_operatore ~ '/rimuovi') }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Rimuovere {{ s.operatore_cognome }} {{ s.operatore_nome }} dal piano? L\'operazione fallisce se ha turni assegnati.');">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Rimuovi</button>
+                            </form>
                         </td>
                     {% endif %}
                 </tr>
