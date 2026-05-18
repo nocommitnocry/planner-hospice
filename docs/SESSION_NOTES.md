@@ -387,8 +387,15 @@ Operatori in itinere + saldi editabili. Azione «Aggiungi operatore al piano» (
    - Caso cross-piano dello stesso mese: crea due piani (Hospice e UCP-DOM) dello stesso mese, aggiungi lo stesso operatore in itinere in entrambi (NB: la seconda aggiunta non ricrea il saldo, riusa quello esistente). Elimina uno dei due piani in bozza: il saldo deve rimanere intatto perché l'op è ancora nell'altro piano.
 5. Loggarsi con **visualizzatore**: deve vedere la tabella saldi senza la colonna **Azioni** né i bottoni di aggiunta. URL manipolati (`/piani-turno/{id}/saldi/{sid}/edit`) devono dare 403.
 
-### Prossima sessione (4-quater)
+### Prossima sessione (4-quater) — riveduta il 2026-05-18
 
-Cross-setting view: nel calendario del mio piano, gli operatori che hanno turni nell'altro piano dello stesso mese vengono mostrati con overlay grigio non cliccabile (tooltip con setting di origine). Serve per pianificare senza sbattere contro l'UNIQUE `(operatore, data)`. Probabilmente sub-sessione corta perché tutto il modello è già in posto (4-bis + 4-ter).
+Roadmap rivista: la sessione 4-quater non è più "overlay cross-setting" ma **refactoring del ricalcolo saldi + revisione di `removeOperatore`** — chiusura del debt emerso rileggendo il codice 4-ter. Quattro modifiche, niente migration, niente UI nuova. Spec autoesplicativa in `spec-sessione-4-quater.md` (a livello root del repo). Riassunto:
 
-Poi 4-quinquies (CRUD `assenze` + flag `tipi_turno.esclude_pianificazione` per maternità nascoste), poi 5 (vincoli bloccanti), poi 6 (generatore automatico).
+1. Split di `SaldoRicalcoloService::ricalcola()` in `ricalcolaMese` (solo mese, ritorna progressivo) + `propagaDaQui` (catena successiva), per evitare la doppia propagazione quando `SaldiController::update` cambia sia `ore_dovute` sia `saldo_progressivo`. `ricalcola()` resta come wrapper di comodo.
+2. `SaldiController::update`: propagazione **unica** a fine transazione con il valore "vincitore" (manuale se presente, calcolato altrimenti). Rimosso il commento-pezza "deve essere DOPO altrimenti il ricalcolo lo sovrascriverebbe".
+3. `SaldiController::removeOperatore`: rimosso il gate `aggiunto_manualmente=1`. Ora basta zero turni: si può rimuovere anche un operatore incluso automaticamente quando non ha turni (caso dimissione infra-mese). Il flag resta informazione storica nella tabella e nel log.
+4. Nuovo helper `SaldoRicalcoloService::rimuoviSaldoSeOrfano(idOp, anno, mese, operatoriInAltriPianiDelMese)` che centralizza "delete saldo se non in altri piani del mese + propaga catena progressivo successiva" (prima della 4-quater i mesi successivi restavano sfasati dopo cancellazione). Usato sia da `SaldiController::removeOperatore` sia da `PianiTurnoController::destroy` (che ora inietta il service). Rimosso `SaldoOreModel::deleteByAnnoMeseEscludendoOperatori` (sostituito dal loop con helper).
+
+Test manuali 1-7 in spec (entrambi i campi update, un solo campo update, rimozione operatore "auto" senza turni, rimozione operatore con turni ancora bloccata, catena progressivo post-cancellazione, destroy con operatore cross-setting, destroy con operatore solo in quel piano).
+
+**Poi:** 4-quinquies (overlay cross-setting), 4-sexies (CRUD `assenze` + flag `tipi_turno.esclude_pianificazione` per maternità nascoste), 5 (vincoli bloccanti), 6 (generatore automatico).
