@@ -29,6 +29,18 @@
             </div>
         </div>
 
+        {% if fuoriFinestra %}
+            <div class="alert alert-danger small">
+                <strong>Data fuori dal periodo di servizio.</strong>
+                {{ fuoriFinestra }}
+                {% if turno %}
+                    Il turno esistente può essere modificato o eliminato, ma non se ne possono creare di nuovi in date fuori finestra.
+                {% else %}
+                    L'assegnazione di un nuovo turno verrà rifiutata.
+                {% endif %}
+            </div>
+        {% endif %}
+
         {% if vincoli|length > 0 %}
             <div class="alert alert-warning small">
                 <strong>Vincoli attivi per questo operatore:</strong>

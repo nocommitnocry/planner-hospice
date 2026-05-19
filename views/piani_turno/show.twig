@@ -134,8 +134,25 @@
                         </td>
                         {% for g in giorni %}
                             {% set turno = turniByOpData[s.id_operatore][g.date] ?? null %}
+                            {% set cross = (not turno) ? (crossSettingByOpData[s.id_operatore][g.date] ?? null) : null %}
+                            {% set primaAssunzione = s.operatore_data_assunzione and g.date < s.operatore_data_assunzione %}
+                            {% set dopoCessazione  = s.operatore_data_cessazione and g.date > s.operatore_data_cessazione %}
+                            {% set fuoriFinestra = (not turno) and (not cross) and (primaAssunzione or dopoCessazione) %}
                             {% set cellClass = 'text-center cella-turno' ~ (g.weekend ? ' weekend' : '') %}
-                            {% if celleEditabili %}
+                            {% if cross %}
+                                {# Occupata in un altro piano dello stesso mese: overlay non cliccabile. #}
+                                <td class="{{ cellClass }} cella-cross-setting"
+                                    title="{{ cross.tipo_codice }} · {{ cross.tipo_descrizione }} — nel piano {{ cross.setting_nome }}{% if cross.note %} ({{ cross.note }}){% endif %}">
+                                    <span class="cross-banda" style="background-color: {{ cross.tipo_colore }};" aria-hidden="true"></span>
+                                    <span class="cross-codice">{{ cross.tipo_codice }}</span>
+                                </td>
+                            {% elseif fuoriFinestra %}
+                                {# Fuori dal periodo di servizio dell'operatore: non assegnabile. #}
+                                <td class="{{ cellClass }} cella-fuori-finestra"
+                                    title="{% if primaAssunzione %}Operatore assunto solo dal {{ s.operatore_data_assunzione|date('d/m/Y') }}{% else %}Operatore cessato il {{ s.operatore_data_cessazione|date('d/m/Y') }}{% endif %}">
+                                    <span aria-hidden="true">·</span>
+                                </td>
+                            {% elseif celleEditabili %}
                                 <td class="{{ cellClass }} cella-editabile">
                                     <a class="cella-link"
                                        href="{{ url('/piani-turno/' ~ piano.id ~ '/turni/edit?operatore=' ~ s.id_operatore ~ '&data=' ~ g.date) }}"

@@ -6,11 +6,11 @@
 <h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
 
 <div class="alert alert-info">
-    <strong>Sessione 4-ter completata.</strong> Operatori in itinere: dal calendario di un piano
-    in bozza si può aggiungere un operatore non incluso alla creazione (assunto infra-mese, in
-    itinere dall'altro setting). Saldi editabili: ore dovute e saldo progressivo con nota
-    obbligatoria, storico delle modifiche tracciato. Prossime sessioni: overlay cross-setting,
-    CRUD assenze, vincoli bloccanti.
+    <strong>Sessione 4-quinquies completata.</strong> Overlay cross-setting nel calendario: per
+    ogni operatore del piano corrente che ha turni nell'altro piano dello stesso mese, la cella
+    appare grigia non cliccabile con il codice del tipo turno attenuato e tooltip sul setting di
+    origine. Evita pianificazione cieca prima dell'UNIQUE su <code>(operatore, data)</code>.
+    Prossime sessioni: CRUD assenze (4-sexies), vincoli bloccanti (5), generatore automatico (6).
 </div>
 
 <div class="row g-3">

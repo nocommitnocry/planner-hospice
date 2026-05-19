@@ -452,3 +452,61 @@ Prima del fix di second-pass: cancellando il piano A in cui l'operatore X aveva 
 Nel calendario del piano corrente, per gli operatori del piano che hanno turni nell'altro piano dello stesso mese (cross-setting), mostrarli come overlay grigio non cliccabile con tooltip che indica il setting di origine. Serve a rendere visibili i conflitti potenziali prima di sbatterci contro l'unique `(operatore, data)` su `turni`. Il modello è già in posto (4-bis introduce setting, 4-ter materializza `piano_operatori`), serve solo aggiungere una query "turni dell'op in altri piani del mese" e renderizzare il calendario di conseguenza.
 
 **Poi:** 4-sexies (CRUD `assenze` + flag `tipi_turno.esclude_pianificazione`), 5 (vincoli bloccanti), 6 (generatore automatico).
+
+---
+
+## Sessione 4-quinquies — 2026-05-19 — Overlay cross-setting nel calendario
+
+### Cosa è stato fatto
+
+- **`TurnoModel::listCrossSettingPerPiano(idPiano, anno, mese)`** — nuova query. Ritorna i turni assegnati nello stesso (anno, mese) in piani DIVERSI da quello dato, limitati agli operatori che sono in `piano_operatori` del piano corrente. Ogni riga include `id_operatore`, `data`, `note`, `tipo_codice`/`tipo_descrizione`/`tipo_colore`, `piano_origine_id`, `setting_codice`/`setting_nome`. Due placeholder distinti (`:id_piano_corrente`, `:id_piano_escluso`) con lo stesso valore per rispettare la regola "niente named placeholder riusati".
+- **`PianiTurnoController::show`** — costruisce `crossSettingByOpData = [id_operatore][YYYY-MM-DD] => turnoCross` accanto a `turniByOpData` e lo passa alla view. Commento esplicito che l'UNIQUE `(operatore, data)` su `turni` garantisce mutua esclusione: una cella non può avere contemporaneamente un turno del piano corrente e uno cross-setting.
+- **`views/piani_turno/show.twig`** — nuovo ramo della cella PRIMA dei due esistenti: se `not turno and cross`, renderizza `<td class="cella-cross-setting">` con `cross-banda` (banda laterale 4px col `tipo_colore` originale), `cross-codice` (codice attenuato), e `title` "{codice} · {descrizione} — nel piano {setting_nome} ({note})". Vale sia in modalità editabile sia read-only (lo stato del piano corrente non cambia il fatto che la cella è occupata altrove).
+- **`public/css/app.css`** — classe `.cella-cross-setting`: background `#f1f3f5`, `cursor: not-allowed`, font italico, padding asimmetrico per fare spazio alla banda. `.cross-banda` posizionata in absolute sul lato sinistro, `.cross-codice` con `opacity: 0.7` e font-weight 600. Niente outline hover (la cella non è interattiva).
+- **`views/dashboard/index.twig`** — banner aggiornato a sessione 4-quinquies.
+
+### Bug catturato durante i test — turni fuori dal periodo di servizio
+
+Olga ha provato a inserire un turno il 30/05 a un operatore con `data_cessazione = 2026-05-29`. Il sistema lo accettava (sia in bozza sia post-`unpublish`). Il buco era esistente dalla 4-ter: le date di assunzione/cessazione filtrano la `findInServizioNelMese` alla creazione del piano (l'op non entra se cessato pre-mese o non ancora assunto post-mese), ma una volta che l'op è in `piano_operatori` nessuno controlla più la finestra a livello di singolo turno. Fix integrata nella 4-quinquies:
+
+- **`TurniController`** — nuovo helper privato `messaggioFuoriFinestra($operatore, $dataTurno): ?string` che ritorna un messaggio user-friendly se `dataTurno < data_assunzione` o `dataTurno > data_cessazione` (confronto lessicografico su stringa `Y-m-d`, identico al confronto cronologico). `validateRiferimenti` lo invoca dopo aver verificato l'appartenenza al piano: in caso di violazione aggiunge l'errore alla chiave `data` e il flusso `store` lo restituisce al form via `redirectAlForm` con old input e messaggi standard. `update` e `destroy` non sono toccati: l'utente deve poter modificare il tipo o cancellare un turno esistente anche se "fuori finestra" (caso: data_cessazione aggiunta retroattivamente).
+- **`TurniController::edit`** — calcola `fuoriFinestra` (lo stesso helper) e lo passa al form: alert rosso informativo prima del submit. Non blocca l'apertura del form: serve a permettere edit/delete di turni esistenti.
+- **`views/turni/form.twig`** — alert `alert-danger` se `fuoriFinestra` è valorizzato, con testo specifico per "turno esistente" (modificabile/eliminabile) vs "nuovo turno" (rifiutato al submit).
+- **`PianoOperatoreModel::listInPiano`** — esposti due nuovi alias `operatore_data_assunzione` e `operatore_data_cessazione` (presi dall'op joinato). Servono al calendario.
+- **`views/piani_turno/show.twig`** — nel ciclo cella, prima del ramo `celleEditabili`: se non c'è `turno` né `cross`, e `g.date < data_assunzione` o `g.date > data_cessazione`, render `<td class="cella-fuori-finestra">` con tooltip "Operatore assunto solo dal …" / "Operatore cessato il …". Le celle con turno esistente restano cliccabili (per modifica/elimina) — coerente con la regola server-side.
+- **`public/css/app.css`** — classe `.cella-fuori-finestra` con retino diagonale tratteggiato (repeating-linear-gradient 135°, grigio chiaro). Distinta visivamente sia dalla cella vuota normale sia dal `.cella-cross-setting`.
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Mutua esclusione cella corrente vs cross | Garantita dall'UNIQUE `(operatore, data)` su `turni`. In Twig il check è `not turno and cross`: se c'è un turno nel piano corrente quella ha la precedenza, l'altro è semplicemente impossibile |
+| Overlay informativo (variante A) | Codice del tipo turno visibile ma attenuato + banda laterale 4px col colore originale + tooltip con descrizione e setting di origine. Variante B (retino grigio uniforme) scartata per evitare di rendere la cella "cieca": vedere a colpo d'occhio se l'op è già in M, F o N nell'altro piano è il punto della feature |
+| Filtro operatori cross | La query joina `piano_operatori` del piano corrente per limitare il sottoinsieme. Un operatore presente solo nell'altro piano (mai aggiunto in itinere al mio) non genera celle: non lo mostro neanche nella tabella saldi, quindi non avrebbe una riga su cui dipingere l'overlay |
+| Stati del piano corrente | L'overlay si vede in qualunque stato (bozza/pubblicato/archiviato): è informazione di realtà su un altro piano, non un'azione del mio |
+| Placeholder duplicato | `:id_piano_corrente` + `:id_piano_escluso` con lo stesso valore. Coerente con la regola PDO già stabilita (no named placeholder riusati). Niente posizionali perché qui non c'è `IN (...)` variabile |
+| Niente migration, niente nuova rotta | Sessione di sola lettura: la query usa solo tabelle esistenti, il rendering è additivo, nessun cambio di flusso |
+| Finestra di servizio (fix bug) | Check server-side in `validateRiferimenti` (`store` rifiuta turni fuori finestra). `update`/`destroy` non bloccati: servono per pulire turni esistenti dopo aver inserito retroattivamente `data_cessazione`. UI: cella vuota fuori finestra diventa overlay tratteggiato non cliccabile; cella con turno esistente resta cliccabile per consentire modifica/elimina |
+| Confronto date | Lessicografico su stringa `Y-m-d` sia in PHP sia in Twig: coincide con quello cronologico, evita conversioni `DateTime` per ogni cella del calendario |
+
+### Da fare prima della prossima sessione (lato utente)
+
+1. `composer dump-autoload` (la modifica al `TurnoModel` aggiunge solo un metodo, l'autoload classmap esistente è già a posto in dev — ma non guasta).
+2. Riavviare `php -S localhost:8000 -t public/` e con utente **admin** o **caposala**:
+   - **Setup**: avere due piani in bozza per lo **stesso mese** (uno Hospice, uno UCP-DOM). Aggiungere in itinere lo stesso operatore X in entrambi (azione 4-ter "+ Aggiungi operatore al piano").
+   - **Test 1 (overlay base)**: nel piano Hospice assegnare un turno `M` a X il giorno 5. Aprire il piano UCP-DOM: la cella `X × giorno 5` deve essere grigia con banda laterale rossa (o del colore di `M`), codice `M` in italico attenuato, tooltip "M · Mattina — nel piano Hospice". Non cliccabile.
+   - **Test 2 (rimozione turno)**: tornare al piano Hospice, eliminare il turno di X il giorno 5. Aprire UCP-DOM: la cella deve essere tornata `+` cliccabile (overlay sparito).
+   - **Test 3 (op solo nel mio piano)**: un operatore Y di casa Hospice, NON in itinere su UCP-DOM. Assegnargli un turno qualsiasi nel piano Hospice. Aprire UCP-DOM: nessuna riga per Y (atteso: non è nei suoi `piano_operatori`).
+   - **Test 4 (piano pubblicato)**: pubblicare il piano UCP-DOM. La cella cross di X il giorno 5 (se c'è ancora un turno in Hospice) deve restare visibile come overlay grigio anche in read-only. Le altre celle senza turno mostrano spazio vuoto.
+   - **Test 5 (cross verso archiviato)**: archiviare il piano Hospice. Aprire UCP-DOM: l'overlay deve restare visibile (la query non filtra per stato del piano d'origine — un turno archiviato è comunque un fatto storico per l'op).
+   - **Test 6 (UNIQUE su turni)**: nel piano UCP-DOM provare a cliccare una cella diversa di X (non in overlay) e assegnare un turno. Deve funzionare. Tentare manualmente via URL di forzare un turno su una cella in overlay sarebbe comunque rifiutato dall'UNIQUE DB (SQLSTATE 23000), ma il workflow normale non lo permette perché la cella non è un link.
+   - **Test 7 (fuori finestra — cessazione)**: a un operatore del piano impostare `data_cessazione = 2026-05-29`. Aprire il piano del mese: le celle dal 30 al 31 dell'op devono avere il retino tratteggiato grigio e tooltip "Operatore cessato il 29/05/2026". Cliccarci non deve fare nulla (non è un link). Tentare via URL `/piani-turno/{id}/turni/edit?operatore=X&data=2026-05-30` apre il form ma mostra alert rosso e il submit deve fallire con messaggio specifico.
+   - **Test 8 (fuori finestra — assunzione)**: simmetrico col `data_assunzione = 2026-05-15`. Celle 01-14 in overlay tratteggiato, tooltip "Operatore assunto solo dal 15/05/2026".
+   - **Test 9 (turno esistente in finestra retro-aggiunta)**: assegnare turni al 30 e 31 a un op, POI inserire `data_cessazione = 2026-05-29`. I turni esistenti restano visibili nelle loro celle e cliccabili. Aprendoli si vede l'alert rosso. Si possono modificare (cambio tipo a `F`) o eliminare. Tentare di crearne di nuovi in altre celle fuori finestra fallisce.
+3. Loggarsi con **visualizzatore** su un piano pubblicato: deve vedere l'overlay grigio come gli altri ruoli, tooltip funzionante, nessun link. Anche le celle fuori finestra dell'operatore devono apparire tratteggiate.
+
+### Prossima sessione (4-sexies) — CRUD assenze + maternità nascosta
+
+Anagrafica `assenze` (ferie/malattia/permesso/maternità con `data_inizio`/`data_fine`), CRUD admin+caposala, e flag `tipi_turno.esclude_pianificazione` per i tipi turno che rappresentano interdizioni dalla pianificazione (es. maternità). Esclusione automatica dal piano degli operatori in interdizione che copre l'intero mese (può riusare `SaldoRicalcoloService::rimuoviSaldoSeOrfano` introdotto in 4-quater quando un'assenza maternità arriva DOPO la creazione del piano e copre tutto il mese). Vedi [[project-operatori-stati-assenze]].
+
+**Poi:** 5 (vincoli bloccanti su tipi_vincolo + check assenze sovrapposte), 6 (generatore automatico schema M-M-P-N-S-R con continuazione dal mese precedente).

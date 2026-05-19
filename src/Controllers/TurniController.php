@@ -91,6 +91,12 @@ final class TurniController extends BaseController
         $operatore = $this->operatori->find($idOperatore);
         $turnoEsistente = $this->turni->findInPianoByOperatoreData($idPiano, $idOperatore, $dataTurno);
         $vincoli = $this->vincoliAttiviPerOperatore($idOperatore, $dataTurno);
+        // Se la data e' fuori dal periodo di servizio dell'operatore mostriamo
+        // un alert nel form. Il blocco vero arriva al submit (vedi store +
+        // validateRiferimenti); qui informiamo l'utente prima che ci provi.
+        $fuoriFinestra = $operatore !== null
+            ? $this->messaggioFuoriFinestra($operatore, $dataTurno)
+            : null;
 
         return $this->render('turni/form.twig', [
             'piano'         => $piano,
@@ -99,6 +105,7 @@ final class TurniController extends BaseController
             'turno'         => $turnoEsistente,
             'tipi'          => $this->tipi->listOrdered(),
             'vincoli'       => $vincoli,
+            'fuoriFinestra' => $fuoriFinestra,
             'labelMese'     => $this->labelMese((int) $piano['mese'], (int) $piano['anno']),
             'labelData'     => $this->labelData($dataTurno),
         ]);
@@ -333,10 +340,16 @@ final class TurniController extends BaseController
             $errors['data'][] = 'La data non appartiene al mese del piano.';
         }
 
-        if ($this->operatori->find($idOperatore) === null) {
+        $operatore = $this->operatori->find($idOperatore);
+        if ($operatore === null) {
             $errors['id_operatore'][] = 'Operatore non trovato.';
         } elseif (!$this->pianoOperatori->isInPiano((int) $piano['id'], $idOperatore)) {
             $errors['id_operatore'][] = 'L\'operatore non è incluso in questo piano.';
+        } else {
+            $fuoriFinestra = $this->messaggioFuoriFinestra($operatore, $dataTurno);
+            if ($fuoriFinestra !== null) {
+                $errors['data'][] = $fuoriFinestra;
+            }
         }
 
         if ($this->tipi->find($idTipoTurno) === null) {
@@ -344,6 +357,41 @@ final class TurniController extends BaseController
         }
 
         return $errors;
+    }
+
+    /**
+     * Ritorna un messaggio user-friendly se la data del turno cade fuori dal
+     * periodo di servizio dell'operatore (prima di data_assunzione o dopo
+     * data_cessazione). Null se la data e' in finestra o se le date sono
+     * entrambe NULL.
+     *
+     * Confronto su stringa `Y-m-d`: lessicograficamente coincide col confronto
+     * cronologico, quindi nessun bisogno di DateTime qui.
+     *
+     * @param array<string,mixed> $operatore
+     */
+    private function messaggioFuoriFinestra(array $operatore, string $dataTurno): ?string
+    {
+        $dataAss = $operatore['data_assunzione'] ?? null;
+        $dataCess = $operatore['data_cessazione'] ?? null;
+
+        if ($dataAss !== null && $dataAss !== '' && $dataTurno < (string) $dataAss) {
+            return sprintf(
+                'Operatore %s %s assunto solo dal %s: non si possono assegnare turni prima di questa data.',
+                (string) $operatore['cognome'],
+                (string) $operatore['nome'],
+                $this->labelData((string) $dataAss),
+            );
+        }
+        if ($dataCess !== null && $dataCess !== '' && $dataTurno > (string) $dataCess) {
+            return sprintf(
+                'Operatore %s %s cessato il %s: non si possono assegnare turni dopo questa data.',
+                (string) $operatore['cognome'],
+                (string) $operatore['nome'],
+                $this->labelData((string) $dataCess),
+            );
+        }
+        return null;
     }
 
     /**

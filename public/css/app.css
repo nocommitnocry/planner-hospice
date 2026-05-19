@@ -76,6 +76,50 @@ footer {
     font-weight: 300;
 }
 
+/* Cella "cross-setting" (sessione 4-quinquies): l'operatore del mio piano
+   ha gia' un turno in un altro piano dello stesso mese. Non cliccabile,
+   con codice attenuato e una banda laterale che riprende il colore del
+   tipo turno originale; il setting di origine sta nel tooltip. */
+.calendario-piano .cella-cross-setting {
+    background-color: #f1f3f5;
+    color: #6c757d;
+    cursor: not-allowed;
+    position: relative;
+    font-style: italic;
+    text-align: center;
+    padding: 0.25rem 0.35rem 0.25rem 0.55rem;
+}
+.calendario-piano .cella-cross-setting .cross-banda {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    opacity: 0.85;
+}
+.calendario-piano .cella-cross-setting .cross-codice {
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+/* Cella fuori dal periodo di servizio dell'operatore (data_assunzione /
+   data_cessazione). Non cliccabile, retino tratteggiato sottile per
+   distinguerla dalle celle vuote normali e da quelle cross-setting. */
+.calendario-piano .cella-fuori-finestra {
+    background-image: repeating-linear-gradient(
+        135deg,
+        #f8f9fa,
+        #f8f9fa 4px,
+        #e9ecef 4px,
+        #e9ecef 8px
+    );
+    color: #adb5bd;
+    cursor: not-allowed;
+    text-align: center;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
 /* Griglia di selezione tipo turno nel form */
 .tipi-turno-grid {
     display: grid;

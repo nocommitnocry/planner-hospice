@@ -46,6 +46,8 @@ final class PianoOperatoreModel extends BaseModel
                     o.nome AS operatore_nome,
                     o.cognome AS operatore_cognome,
                     o.id_setting AS operatore_id_setting,
+                    o.data_assunzione  AS operatore_data_assunzione,
+                    o.data_cessazione  AS operatore_data_cessazione,
                     c.nome AS categoria_nome,
                     c.ordine_visualizzazione AS categoria_ordine,
                     s.codice AS setting_codice,

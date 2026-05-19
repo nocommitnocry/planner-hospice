@@ -56,6 +56,48 @@ final class TurnoModel extends BaseModel
     }
 
     /**
+     * Turni assegnati nello stesso (anno, mese) in piani DIVERSI da quello dato,
+     * limitati agli operatori che appartengono al piano corrente.
+     *
+     * Serve all'overlay "cross-setting" nel calendario (sessione 4-quinquies):
+     * per ogni cella (operatore × giorno) del mio piano voglio sapere se quello
+     * stesso operatore ha un turno in un altro piano dello stesso mese, così da
+     * mostrarla come occupata-altrove (non cliccabile) ed evitare di sbatterci
+     * contro l'UNIQUE (operatore, data) su `turni`.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listCrossSettingPerPiano(int $idPiano, int $anno, int $mese): array
+    {
+        $sql = "SELECT t.id_operatore,
+                       t.data,
+                       t.note,
+                       tt.codice AS tipo_codice,
+                       tt.descrizione AS tipo_descrizione,
+                       tt.colore AS tipo_colore,
+                       p.id   AS piano_origine_id,
+                       s.codice AS setting_codice,
+                       s.nome   AS setting_nome
+                FROM turni t
+                JOIN tipi_turno tt   ON tt.id = t.id_tipo_turno
+                JOIN piano_turni p   ON p.id  = t.id_piano
+                JOIN setting s       ON s.id  = p.id_setting
+                JOIN piano_operatori po_corrente
+                                     ON po_corrente.id_operatore = t.id_operatore
+                                    AND po_corrente.id_piano     = :id_piano_corrente
+                WHERE p.anno = :anno
+                  AND p.mese = :mese
+                  AND t.id_piano <> :id_piano_escluso
+                ORDER BY t.data ASC, t.id_operatore ASC";
+        return $this->db->query($sql, [
+            'id_piano_corrente' => $idPiano,
+            'id_piano_escluso'  => $idPiano,
+            'anno'              => $anno,
+            'mese'              => $mese,
+        ]);
+    }
+
+    /**
      * Turni di un operatore in un dato mese, con i flag/ore del tipo turno
      * necessari al ricalcolo del saldo (lavorate / ferie / permessi / malattia /
      * formazione / riposo).

@@ -240,19 +240,31 @@ final class PianiTurnoController extends BaseController
             $turniByOpData[(int) $t['id_operatore']][(string) $t['data']] = $t;
         }
 
+        // Matrice cross-setting: turni dei miei operatori in altri piani dello
+        // stesso mese (sessione 4-quinquies). L'UNIQUE (operatore, data) su
+        // `turni` garantisce che una stessa cella non possa avere sia un turno
+        // del piano corrente sia uno cross-setting: in caso di sovrapposizione
+        // la cella ricade nel ramo del piano corrente, l'altra è semplicemente
+        // impossibile.
+        $crossSettingByOpData = [];
+        foreach ($this->turni->listCrossSettingPerPiano($id, $anno, $mese) as $t) {
+            $crossSettingByOpData[(int) $t['id_operatore']][(string) $t['data']] = $t;
+        }
+
         $puoModificare = $this->ruoloPuoModificare();
         $bozza = $piano['stato'] === 'bozza';
 
         return $this->render('piani_turno/show.twig', [
-            'piano'              => $piano,
-            'saldi'              => $operatoriDelPiano,
-            'mesiIt'             => self::MESI_IT,
-            'labelMese'          => $this->labelMese($mese, $anno),
-            'giorni'             => $this->giorniDelMese($anno, $mese),
-            'numTurni'           => $this->piani->countTurni($id),
-            'puoModificare'      => $puoModificare,
-            'celleEditabili'     => $puoModificare && $bozza,
-            'turniByOpData'      => $turniByOpData,
+            'piano'                => $piano,
+            'saldi'                => $operatoriDelPiano,
+            'mesiIt'               => self::MESI_IT,
+            'labelMese'            => $this->labelMese($mese, $anno),
+            'giorni'               => $this->giorniDelMese($anno, $mese),
+            'numTurni'             => $this->piani->countTurni($id),
+            'puoModificare'        => $puoModificare,
+            'celleEditabili'       => $puoModificare && $bozza,
+            'turniByOpData'        => $turniByOpData,
+            'crossSettingByOpData' => $crossSettingByOpData,
         ]);
     }
 
