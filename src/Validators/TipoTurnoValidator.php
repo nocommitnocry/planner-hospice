@@ -81,7 +81,7 @@ final class TipoTurnoValidator extends BaseValidator
             }
         }
 
-        foreach (['is_riposo', 'is_ferie', 'is_permesso', 'is_malattia', 'is_formazione'] as $flag) {
+        foreach (['is_riposo', 'is_ferie', 'is_permesso', 'is_malattia', 'is_formazione', 'esclude_pianificazione'] as $flag) {
             $data[$flag] = Rules::toBool($input[$flag] ?? false) ? 1 : 0;
         }
 

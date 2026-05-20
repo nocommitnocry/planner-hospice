@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS tipi_turno (
     is_permesso BOOLEAN NOT NULL DEFAULT FALSE,
     is_malattia BOOLEAN NOT NULL DEFAULT FALSE,
     is_formazione BOOLEAN NOT NULL DEFAULT FALSE,
+    esclude_pianificazione BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Se 1, gli operatori con assenza di questo tipo che copre l''intero mese non vengono fotografati nel piano (es. maternita)',
     creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

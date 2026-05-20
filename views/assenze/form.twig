@@ -1,0 +1,92 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ titolo }} &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">{{ titolo }}</h1>
+            <a href="{{ url('/assenze') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        <form method="post" action="{{ url(action) }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <label for="id_operatore" class="form-label">Operatore <span class="text-danger">*</span></label>
+                    <select id="id_operatore" name="id_operatore"
+                            class="form-select{% if form_errors.id_operatore %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% set sel_op = old_input.id_operatore ?? assenza.id_operatore ?? null %}
+                        {% for o in operatori %}
+                            <option value="{{ o.id }}" {% if sel_op == o.id %}selected{% endif %}>
+                                {{ o.cognome }} {{ o.nome }} — {{ o.categoria_nome }} ({{ o.setting_nome }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_operatore %}
+                        <div class="invalid-feedback">{{ form_errors.id_operatore|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-5">
+                    <label for="id_tipo_turno" class="form-label">Tipo di assenza <span class="text-danger">*</span></label>
+                    <select id="id_tipo_turno" name="id_tipo_turno"
+                            class="form-select{% if form_errors.id_tipo_turno %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% set sel_tipo = old_input.id_tipo_turno ?? assenza.id_tipo_turno ?? null %}
+                        {% for t in tipi %}
+                            <option value="{{ t.id }}" {% if sel_tipo == t.id %}selected{% endif %}>
+                                {{ t.codice }} — {{ t.descrizione }}{% if t.esclude_pianificazione %} · esclude pianif.{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_tipo_turno %}
+                        <div class="invalid-feedback">{{ form_errors.id_tipo_turno|first }}</div>
+                    {% endif %}
+                    <div class="form-text">
+                        Es. F = Ferie, MA = Malattia, PE = Permesso. Crea un tipo dedicato
+                        (es. MAT) con il flag <em>esclude pianificazione</em> per le maternità.
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <label for="data_inizio" class="form-label">Dal <span class="text-danger">*</span></label>
+                    <input type="date" id="data_inizio" name="data_inizio"
+                           class="form-control{% if form_errors.data_inizio %} is-invalid{% endif %}"
+                           value="{{ old_input.data_inizio ?? assenza.data_inizio ?? '' }}" required>
+                    {% if form_errors.data_inizio %}
+                        <div class="invalid-feedback">{{ form_errors.data_inizio|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="data_fine" class="form-label">Al <span class="text-danger">*</span></label>
+                    <input type="date" id="data_fine" name="data_fine"
+                           class="form-control{% if form_errors.data_fine %} is-invalid{% endif %}"
+                           value="{{ old_input.data_fine ?? assenza.data_fine ?? '' }}" required>
+                    {% if form_errors.data_fine %}
+                        <div class="invalid-feedback">{{ form_errors.data_fine|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label for="note" class="form-label">Note</label>
+                    <textarea id="note" name="note" rows="3" maxlength="1000"
+                              class="form-control{% if form_errors.note %} is-invalid{% endif %}">{{ old_input.note ?? assenza.note ?? '' }}</textarea>
+                    {% if form_errors.note %}
+                        <div class="invalid-feedback">{{ form_errors.note|first }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url('/assenze') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

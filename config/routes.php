@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+use App\Controllers\AssenzeController;
 use App\Controllers\AuthController;
 use App\Controllers\CategorieOperatoriController;
 use App\Controllers\DashboardController;
@@ -137,4 +138,19 @@ return function (Router $r): void {
     $r->post('/piani-turno/{id}/operatori/{opid}/rimuovi',   [SaldiController::class, 'removeOperatore'],  $adminCaposala, name: 'saldi.remove');
     $r->get('/piani-turno/{id}/saldi/{sid}/edit',            [SaldiController::class, 'editForm'],         $adminCaposala, name: 'saldi.edit-form');
     $r->post('/piani-turno/{id}/saldi/{sid}',                [SaldiController::class, 'update'],           $adminCaposala, name: 'saldi.update');
+
+    // -------------------------------------------------------------------------
+    // Assenze operatori (sessione 4-sexies)
+    //
+    // CRUD ferie/permessi/malattia/maternita'. Scrittura admin+caposala,
+    // lettura admin+caposala (le coordinatrici devono sapere chi è assente).
+    // Il filtro automatico "maternita' intero mese" sul fotografa-operatori
+    // del piano legge da questa tabella.
+    // -------------------------------------------------------------------------
+    $r->get('/assenze',              [AssenzeController::class, 'index'],   $adminCaposala, name: 'assenze.index');
+    $r->get('/assenze/create',       [AssenzeController::class, 'create'],  $adminCaposala, name: 'assenze.create');
+    $r->post('/assenze',             [AssenzeController::class, 'store'],   $adminCaposala, name: 'assenze.store');
+    $r->get('/assenze/{id}/edit',    [AssenzeController::class, 'edit'],    $adminCaposala, name: 'assenze.edit');
+    $r->post('/assenze/{id}',        [AssenzeController::class, 'update'],  $adminCaposala, name: 'assenze.update');
+    $r->post('/assenze/{id}/delete', [AssenzeController::class, 'destroy'], $adminCaposala, name: 'assenze.destroy');
 };

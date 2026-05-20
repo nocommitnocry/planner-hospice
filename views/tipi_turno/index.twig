@@ -53,6 +53,9 @@
                             {% if not (t.is_riposo or t.is_ferie or t.is_permesso or t.is_malattia or t.is_formazione) %}
                                 <span class="text-muted small">lavoro</span>
                             {% endif %}
+                            {% if t.esclude_pianificazione %}
+                                <span class="badge bg-dark" title="Operatori con assenza di questo tipo per l'intero mese non vengono inclusi nel nuovo piano">esclude pianif.</span>
+                            {% endif %}
                         </td>
                         <td>
                             <span class="d-inline-block border" style="width:2rem;height:1.2rem;background:{{ t.colore }}"

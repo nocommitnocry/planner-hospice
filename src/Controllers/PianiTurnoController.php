@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Helpers\Container;
 use App\Helpers\Database;
 use App\Helpers\Logger;
+use App\Models\AssenzaModel;
 use App\Models\OperatoreModel;
 use App\Models\PianoOperatoreModel;
 use App\Models\PianoTurnoModel;
@@ -42,6 +43,7 @@ final class PianiTurnoController extends BaseController
     private TurnoModel $turni;
     private SettingModel $settings;
     private PianoOperatoreModel $pianoOperatori;
+    private AssenzaModel $assenze;
     private SaldoRicalcoloService $ricalcolo;
     private Database $db;
 
@@ -60,6 +62,7 @@ final class PianiTurnoController extends BaseController
         $this->turni = new TurnoModel();
         $this->settings = new SettingModel();
         $this->pianoOperatori = new PianoOperatoreModel();
+        $this->assenze = new AssenzaModel();
         $this->ricalcolo = new SaldoRicalcoloService($this->saldi, $this->turni);
         $this->db = Container::instance()->get(Database::class);
     }
@@ -133,6 +136,18 @@ final class PianiTurnoController extends BaseController
         // Le date sono informative (vedi 4-ter): cessati post-mese restano,
         // le ore residue vanno regolate a mano dal saldo del piano.
         $operatoriDelPiano = $this->operatori->findInServizioNelMese($anno, $mese, $idSetting);
+
+        // Esclusione automatica di chi ha un'assenza con tipo `esclude_pianificazione=1`
+        // che copre INTERAMENTE il mese (sessione 4-sexies). Caso d'uso primario: maternità.
+        // Per assenze parziali non si esclude — la riduzione delle ore_dovute resta a mano.
+        $idEsclusi = $this->assenze->listIdOperatoriEsclusiNelMese($anno, $mese);
+        if ($idEsclusi !== []) {
+            $operatoriDelPiano = array_values(array_filter(
+                $operatoriDelPiano,
+                static fn ($op) => !in_array((int) $op['id'], $idEsclusi, true),
+            ));
+        }
+
         if ($operatoriDelPiano === []) {
             return $this->redirect(
                 '/piani-turno',

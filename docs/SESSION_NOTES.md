@@ -510,3 +510,92 @@ Olga ha provato a inserire un turno il 30/05 a un operatore con `data_cessazione
 Anagrafica `assenze` (ferie/malattia/permesso/maternità con `data_inizio`/`data_fine`), CRUD admin+caposala, e flag `tipi_turno.esclude_pianificazione` per i tipi turno che rappresentano interdizioni dalla pianificazione (es. maternità). Esclusione automatica dal piano degli operatori in interdizione che copre l'intero mese (può riusare `SaldoRicalcoloService::rimuoviSaldoSeOrfano` introdotto in 4-quater quando un'assenza maternità arriva DOPO la creazione del piano e copre tutto il mese). Vedi [[project-operatori-stati-assenze]].
 
 **Poi:** 5 (vincoli bloccanti su tipi_vincolo + check assenze sovrapposte), 6 (generatore automatico schema M-M-P-N-S-R con continuazione dal mese precedente).
+
+---
+
+## Sessione 4-sexies — 2026-05-20 — CRUD assenze + maternità nascosta
+
+### Cosa è stato fatto
+
+- **Migrazione `0004_tipi_turno_esclude_pianificazione.sql`** — aggiunge `tipi_turno.esclude_pianificazione BOOLEAN NOT NULL DEFAULT FALSE` dopo `is_formazione`. Niente seed forzato di un tipo `MAT`: Olga lo crea da `/tipi-turno` con il flag attivo (coerente col principio "niente automatismi opachi"). `schema.sql` aggiornato per nuovi install.
+- **Tipi turno — flag**: `TipoTurnoModel.fillable` esteso, `TipoTurnoValidator` aggiunge `esclude_pianificazione` al ciclo dei bool flags, `TipiTurnoController.collectInput` lo include (cf. feedback `collect-input-completeness`). Form `views/tipi_turno/form.twig` con fieldset dedicato "Interdizione dalla pianificazione" (separato dalla categoria del turno, che è mutuamente esclusiva); index aggiunge il badge nero "esclude pianif." quando il flag è attivo.
+- **`AssenzaModel`** (nuovo): fillable `[id_operatore, id_tipo_turno, data_inizio, data_fine, note, creato_da]`.
+  - `listJoined(idSetting?, idOperatore?)`: JOIN operatori + setting + tipi_turno + utenti, ordinato `data_inizio DESC, cognome, nome`. Espone `tipo_esclude_pianificazione` per il badge in index.
+  - `listIdOperatoriEsclusiNelMese(anno, mese)`: ritorna `list<int>` di id_operatore con almeno un'assenza su tipo `esclude_pianificazione=1` che copre INTERAMENTE il mese (`data_inizio <= primo_del_mese AND data_fine >= ultimo_del_mese`). Usata dal fotografa-operatori di `PianiTurnoController::store`.
+- **`AssenzaValidator`** (nuovo): valida `id_operatore`/`id_tipo_turno` come interi, `data_inizio`/`data_fine` come `Y-m-d` round-trip (riusa `Rules::date`), `note` opzionale max 1000 char. Coerenza interna: `data_fine >= data_inizio` (confronto lessicografico su stringa Y-m-d). NON verifica esistenza FK — quello lo fa il controller.
+- **`AssenzeController`** (nuovo, admin+caposala): CRUD standard (`index/create/store/edit/update/destroy`). `collectInput` separato per dichiarazione esplicita dei campi. `verificaRiferimenti` checka esistenza op+tipo dopo la validazione. `creato_da` valorizzato solo allo store con `currentUserId()`; in update non si tocca (resta l'autore originale). Logger su create/update/destroy. Filtro index `?setting=hospice|ucp_dom`.
+- **`PianiTurnoController::store`** — fotografa-operatori esteso col filtro 4-sexies:
+  1. `OperatoreModel::findInServizioNelMese($anno, $mese, $idSetting)` (invariata: data anagrafica "chi è in servizio").
+  2. `AssenzaModel::listIdOperatoriEsclusiNelMese($anno, $mese)` → id_operatore con maternità intero-mese.
+  3. `array_filter` per rimuoverli dalla lista prima della creazione di `piano_operatori`/`saldo_ore`. Se la lista diventa vuota, redirect con messaggio "non ci sono operatori attivi in servizio". `AssenzaModel` iniettato come campo `$this->assenze`.
+- **Routing**: 6 rotte sotto `/assenze` (index/create/store/edit/update/destroy), tutte admin+caposala. CSRF on di default sui POST.
+- **Viste**: `views/assenze/index.twig` con tabella + pills setting + badge per `tipo_esclude_pianificazione`; `views/assenze/form.twig` con select operatore (cognome+nome+categoria+setting) e select tipo turno (codice+descrizione+nota "esclude pianif." accanto a quelli flaggati).
+- **Navbar**: voce «Assenze» top-level per admin/caposala (subito dopo «Piani turno», prima del dropdown «Anagrafiche»). **Dashboard**: tile «Assenze» + banner aggiornato a sessione 4-sexies.
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Flag su `tipi_turno` vs stato su `operatori` | Flag su tipi_turno: la verità di "operatore in interdizione" sta nella tabella `assenze`, un solo modello da aggiornare quando la situazione cambia (coerente con [[project-operatori-stati-assenze]]). Aggiungere altre interdizioni in futuro (es. aspettativa) = nuovo tipo turno marcato, niente nuove migrazioni |
+| Niente seed di un tipo `MAT` | La migrazione aggiunge solo il flag. Il codice del tipo turno (`MAT`, `INT`, ecc.) viene scelto da Olga in `/tipi-turno`. Coerente con la libertà di codifica esistente |
+| Filtro intero-mese | Esclusione solo quando l'assenza copre **interamente** il mese (`data_inizio <= primo` AND `data_fine >= ultimo`). Le assenze parziali (es. maternità che inizia il 15) lasciano l'operatore nel piano: la riduzione delle ore_dovute si fa a mano (principio "numero giusto a mano") |
+| Posizione del filtro | Nel `PianiTurnoController::store`, non in `OperatoreModel::findInServizioNelMese`. `findInServizioNelMese` resta una funzione anagrafica "chi è in servizio nel mese": è usata anche da `findCandidatiAggiunta` (4-ter), che NON deve escludere le maternità — un'op in maternità può essere aggiunta in itinere a un piano se necessario |
+| Tipo di assenza nel form | Dropdown con TUTTI i tipi turno (non filtrato a "is_ferie OR is_malattia OR esclude_pianificazione"). Olga sceglie. Etichetta dell'option include " · esclude pianif." se il flag è attivo, per disambiguazione |
+| Coerenza date | `data_fine >= data_inizio` validata dal validator; confronto lessicografico su stringa `Y-m-d` (== cronologico), coerente con la 4-quinquies |
+| Lettura | Admin+caposala (no visualizzatore): le assenze sono informazione operativa, non risultato pubblico come un piano pubblicato. Mantiene parallelo con `/operatori` |
+| `creato_da` | Settato allo store con `currentUserId`. In update NON viene toccato (resta l'autore originale del record) |
+| Note | Opzionali su `assenze` (a differenza di `saldo_modifiche` dove sono obbligatorie). L'assenza è un fatto registrato, non una modifica di valore che richiede motivazione |
+| Inserimento retroattivo di maternità intero-mese (assenza creata DOPO un piano già esistente) | Rinviato. Casistica complessa: se l'operatore ha già turni nel piano, la rimozione automatica via `rimuoviSaldoSeOrfano` violerebbe il gate "zero turni" del removeOperatore. La coordinatrice usa il flusso 4-ter "+ Rimuovi operatore dal piano" (dopo aver tolto i turni) — visibile e controllato. Documentato come **punto aperto**: eventuale automazione futura |
+| Sovrapposizione assenza ↔ turni esistenti | Non controllata nella 4-sexies. Materia della sessione 5 (vincoli bloccanti): in quella sessione si decide se warning o block, e se invalidare turni esistenti che cadono in un'assenza creata dopo |
+
+### Da fare prima della prossima sessione (lato utente)
+
+1. **Backup del DB** (la migrazione 0004 aggiunge una colonna, è veloce ma vale lo standard):
+   ```bash
+   mysqldump -u hospice_user -p hospice_turni > backup-pre-0004-$(date +%Y%m%d).sql
+   ```
+2. **Applicare la migrazione**:
+   ```bash
+   mysql -u hospice_user -p hospice_turni < database/migrations/0004_tipi_turno_esclude_pianificazione.sql
+   ```
+3. `composer dump-autoload` (per il nuovo namespace `AssenzeController`/`AssenzaModel`/`AssenzaValidator`).
+4. Riavviare `php -S localhost:8000 -t public/` e con utente **admin** o **caposala**:
+
+   **Setup tipi turno**
+   - `/tipi-turno` → crea un nuovo tipo: codice `MAT`, descrizione "Maternità / interdizione", colore a piacere, ore conteggiate 0, **flag "Esclude dalla pianificazione" attivo**. Salva.
+   - In lista deve comparire con il badge nero "esclude pianif.".
+   - Modifica un tipo esistente (es. `F` ferie) lasciando il flag spento: il badge non deve apparire.
+
+   **CRUD assenze base**
+   - `/assenze` → bottone «+ Nuova assenza». Crea un'assenza per un operatore Hospice, tipo `F`, dal 2026-06-10 al 2026-06-14, nota "Settimana al mare". Salva.
+   - In lista deve comparire ordinata per data_inizio DESC. Tabs setting "Hospice" / "UCP-DOM" filtrano correttamente per setting di casa dell'operatore.
+   - Modifica l'assenza cambiando il tipo a `PE` (permesso): salvataggio OK, `creato_da` resta lo stesso utente.
+   - Elimina l'assenza: deve scomparire dalla lista.
+
+   **Validazione**
+   - Crea un'assenza con `data_fine < data_inizio`: deve mostrare errore "La data di fine non può essere precedente alla data di inizio." con re-display del form.
+   - Salva un'assenza senza tipo o senza operatore: errori espliciti, old input ripopolato.
+
+   **Filtro maternità intero-mese (cuore della sessione)**
+   - Crea un operatore di prova (es. "Rossi Maria") setting Hospice, attiva = sì.
+   - Crea per lei un'assenza tipo `MAT` (quello con `esclude_pianificazione=1`), dal **2026-07-01 al 2026-12-31**.
+   - Vai a `/piani-turno/create` e crea un piano Hospice per **luglio 2026**. Apri il piano: nella tabella saldi **Rossi Maria NON deve comparire**. Anche la riga del calendario non deve esistere.
+   - Crea un piano Hospice per **giugno 2026**: Rossi Maria **deve** comparire (l'assenza inizia il 1 luglio, giugno non è coperto).
+   - Crea un'assenza tipo `MAT` dal **2026-07-15 al 2026-12-31** per un altro operatore: nel piano luglio quell'operatore **deve** comparire (l'assenza non copre l'intero mese — inizia il 15).
+   - Caso edge: assenza tipo `F` (ferie, flag spento) che copre tutto luglio 2026: l'operatore deve comparire normalmente nel piano (il filtro guarda solo i tipi con `esclude_pianificazione=1`).
+
+   **Non-interferenza con flussi esistenti**
+   - Un operatore in maternità intero-mese deve poter comunque essere aggiunto in itinere a un piano via "+ Aggiungi operatore" (la `findCandidatiAggiunta` non applica il filtro). Caso teorico — verificare che il dropdown lo mostri.
+   - Cancellare un'assenza maternità prima di creare il piano fa rientrare l'operatore nel fotografa-operatori.
+
+5. Loggarsi con **visualizzatore**: nessuna voce «Assenze» in navbar, `/assenze` deve dare 403. I piani pubblicati creati dopo l'inserimento delle maternità mostrano correttamente la lista filtrata (la verità è stata fotografata al momento dello `store`).
+
+### Punto aperto rinviato
+
+- **Maternità inserita DOPO la creazione del piano** che copre l'intero mese: non scatta nessuna rimozione automatica dal piano esistente. La coordinatrice deve passare per il flusso 4-ter ("+ Rimuovi operatore dal piano") dopo aver tolto eventuali turni. Da rivedere se la casistica si rivela frequente — eventualmente automazione con `SaldoRicalcoloService::rimuoviSaldoSeOrfano` quando l'operatore ha zero turni nel piano.
+
+### Prossima sessione (5) — Vincoli bloccanti + check assenze sovrapposte
+
+I `tipi_vincolo` da info display passano a check di validazione (`no_notti` blocca tipi turno notturni, `no_weekend` blocca date di weekend, ecc.). Aggiunta del check "data turno cade dentro un'assenza dell'operatore" — ora che le assenze hanno CRUD si può consumarle in `TurniController::validateRiferimenti`. Da decidere all'apertura: warning o block, e se invalidare turni esistenti che cadono in un'assenza creata dopo.
+
+**Poi:** 6 (generatore automatico schema M-M-P-N-S-R con continuazione dal mese precedente). Vedi [[project-automazioni-popolamento]].

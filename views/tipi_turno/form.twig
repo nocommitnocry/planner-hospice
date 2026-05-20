@@ -111,6 +111,28 @@
                         {% endfor %}
                     </fieldset>
                 </div>
+
+                <div class="col-12">
+                    <fieldset class="border rounded p-3">
+                        <legend class="fs-6 float-none w-auto px-2">Interdizione dalla pianificazione</legend>
+                        {% set escludeChecked = (old_input is iterable and old_input.esclude_pianificazione is defined)
+                            ? old_input.esclude_pianificazione in ['1','on','true']
+                            : (tipo.esclude_pianificazione ?? false) %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox"
+                                   id="esclude_pianificazione" name="esclude_pianificazione" value="1"
+                                   {% if escludeChecked %}checked{% endif %}>
+                            <label class="form-check-label" for="esclude_pianificazione">
+                                Escludi dalla pianificazione automatica
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            Se attivo, un'assenza di questo tipo che copre l'intero mese fa sì che
+                            l'operatore non venga incluso nel nuovo piano (caso d'uso: maternità,
+                            aspettative lunghe).
+                        </div>
+                    </fieldset>
+                </div>
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-4">

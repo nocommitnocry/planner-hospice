@@ -6,11 +6,11 @@
 <h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
 
 <div class="alert alert-info">
-    <strong>Sessione 4-quinquies completata.</strong> Overlay cross-setting nel calendario: per
-    ogni operatore del piano corrente che ha turni nell'altro piano dello stesso mese, la cella
-    appare grigia non cliccabile con il codice del tipo turno attenuato e tooltip sul setting di
-    origine. Evita pianificazione cieca prima dell'UNIQUE su <code>(operatore, data)</code>.
-    Prossime sessioni: CRUD assenze (4-sexies), vincoli bloccanti (5), generatore automatico (6).
+    <strong>Sessione 4-sexies completata.</strong> CRUD assenze (ferie, permessi, malattia,
+    maternità) con periodi dal-al e nuovo flag <code>tipi_turno.esclude_pianificazione</code>:
+    gli operatori con un'assenza di un tipo "esclude pianificazione" che copre l'intero mese
+    non vengono fotografati nei piani che si creano per quel mese (caso d'uso: maternità nascoste).
+    Prossime sessioni: vincoli bloccanti (5), generatore automatico (6).
 </div>
 
 <div class="row g-3">
@@ -29,6 +29,14 @@
                 <div class="card-body">
                     <h5 class="card-title">Operatori</h5>
                     <p class="text-muted small mb-0">Personale dell'hospice da pianificare.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="{{ url('/assenze') }}" class="card h-100 text-decoration-none">
+                <div class="card-body">
+                    <h5 class="card-title">Assenze</h5>
+                    <p class="text-muted small mb-0">Ferie, permessi, malattia, maternità.</p>
                 </div>
             </a>
         </div>

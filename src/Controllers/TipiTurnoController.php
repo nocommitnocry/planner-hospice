@@ -132,11 +132,12 @@ final class TipiTurnoController extends BaseController
             'colore'          => $request->post('colore'),
             'ore_conteggiate' => $request->post('ore_conteggiate'),
             'priorita'        => $request->post('priorita'),
-            'is_riposo'       => $request->post('is_riposo'),
-            'is_ferie'        => $request->post('is_ferie'),
-            'is_permesso'     => $request->post('is_permesso'),
-            'is_malattia'     => $request->post('is_malattia'),
-            'is_formazione'   => $request->post('is_formazione'),
+            'is_riposo'              => $request->post('is_riposo'),
+            'is_ferie'               => $request->post('is_ferie'),
+            'is_permesso'            => $request->post('is_permesso'),
+            'is_malattia'            => $request->post('is_malattia'),
+            'is_formazione'          => $request->post('is_formazione'),
+            'esclude_pianificazione' => $request->post('esclude_pianificazione'),
         ];
     }
 }
