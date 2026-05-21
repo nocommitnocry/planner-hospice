@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Helpers\Container;
 use App\Helpers\Database;
 use App\Helpers\Logger;
+use App\Models\AssenzaModel;
 use App\Models\OperatoreModel;
 use App\Models\PianoOperatoreModel;
 use App\Models\PianoTurnoModel;
@@ -44,6 +45,7 @@ final class TurniController extends BaseController
     private OperatoreModel $operatori;
     private SaldoOreModel $saldi;
     private PianoOperatoreModel $pianoOperatori;
+    private AssenzaModel $assenze;
     private SaldoRicalcoloService $ricalcolo;
     private Database $db;
 
@@ -56,6 +58,7 @@ final class TurniController extends BaseController
         $this->operatori = new OperatoreModel();
         $this->saldi = new SaldoOreModel();
         $this->pianoOperatori = new PianoOperatoreModel();
+        $this->assenze = new AssenzaModel();
         $this->ricalcolo = new SaldoRicalcoloService($this->saldi, $this->turni);
         $this->db = Container::instance()->get(Database::class);
     }
@@ -97,17 +100,29 @@ final class TurniController extends BaseController
         $fuoriFinestra = $operatore !== null
             ? $this->messaggioFuoriFinestra($operatore, $dataTurno)
             : null;
+        // Sessione 5: se la data cade dentro un'assenza programmata dell'op
+        // calcoliamo il messaggio e lo passiamo alla view. Per i turni
+        // esistenti (sia di lavoro sia di tipo assenza coincidente) il
+        // submit è bloccato lato server (vedi `update`): l'unica azione
+        // lecita è l'eliminazione. La view differenzia il tono dell'alert
+        // tra "conflitto" (turno lavoro) e "ridondanza" (turno assenza
+        // coincidente) — visivamente diverso, comportamento server identico.
+        $turnoIsAssenza = $turnoEsistente !== null && (int) ($turnoEsistente['tipo_is_assenza'] ?? 0) === 1;
+        $inAssenza = $this->messaggioAssenza($idOperatore, $dataTurno);
+        $assenzaRidondante = $inAssenza !== null && $turnoIsAssenza;
 
         return $this->render('turni/form.twig', [
-            'piano'         => $piano,
-            'operatore'     => $operatore,
-            'data'          => $dataTurno,
-            'turno'         => $turnoEsistente,
-            'tipi'          => $this->tipi->listOrdered(),
-            'vincoli'       => $vincoli,
-            'fuoriFinestra' => $fuoriFinestra,
-            'labelMese'     => $this->labelMese((int) $piano['mese'], (int) $piano['anno']),
-            'labelData'     => $this->labelData($dataTurno),
+            'piano'             => $piano,
+            'operatore'         => $operatore,
+            'data'              => $dataTurno,
+            'turno'             => $turnoEsistente,
+            'tipi'              => $this->tipi->listOrdered(),
+            'vincoli'           => $vincoli,
+            'fuoriFinestra'     => $fuoriFinestra,
+            'inAssenza'         => $inAssenza,
+            'assenzaRidondante' => $assenzaRidondante,
+            'labelMese'         => $this->labelMese((int) $piano['mese'], (int) $piano['anno']),
+            'labelData'         => $this->labelData($dataTurno),
         ]);
     }
 
@@ -205,6 +220,19 @@ final class TurniController extends BaseController
         $turno = $this->turni->find($idTurno);
         if ($turno === null || (int) $turno['id_piano'] !== $idPiano) {
             return $this->redirect("/piani-turno/{$idPiano}", 'error', 'Turno non trovato in questo piano.');
+        }
+
+        // Sessione 5 (iterazione 2026-05-21): le assenze vincono sempre.
+        // Su un turno esistente che cade in un periodo di assenza l'unica
+        // azione lecita è l'eliminazione (destroy resta permesso). Per
+        // modificarlo, la coordinatrice deve prima correggere l'assenza.
+        $msgAssenza = $this->messaggioAssenza((int) $turno['id_operatore'], (string) $turno['data']);
+        if ($msgAssenza !== null) {
+            return $this->redirect(
+                "/piani-turno/{$idPiano}",
+                'error',
+                'Modifica non consentita: ' . $msgAssenza . ' Per modificare il tipo turno, restringi prima il periodo dell\'assenza; per rimuovere il turno usa Elimina.',
+            );
         }
 
         // In update si modificano solo tipo turno e note. Operatore e data
@@ -349,6 +377,16 @@ final class TurniController extends BaseController
             $fuoriFinestra = $this->messaggioFuoriFinestra($operatore, $dataTurno);
             if ($fuoriFinestra !== null) {
                 $errors['data'][] = $fuoriFinestra;
+            } else {
+                // Sessione 5: le assenze programmate vincono sempre su un
+                // nuovo turno. Su turni esistenti (update/destroy) non passa
+                // di qui: lì il caller è update/destroy che NON chiamano
+                // validateRiferimenti, quindi non c'è rischio di bloccare
+                // un cleanup retroattivo.
+                $msgAssenza = $this->messaggioAssenza($idOperatore, $dataTurno);
+                if ($msgAssenza !== null) {
+                    $errors['data'][] = $msgAssenza;
+                }
             }
         }
 
@@ -392,6 +430,29 @@ final class TurniController extends BaseController
             );
         }
         return null;
+    }
+
+    /**
+     * Ritorna un messaggio user-friendly se la data del turno cade dentro
+     * un'assenza programmata dell'operatore (ferie, permessi, malattia,
+     * maternità, ecc.). Null altrimenti.
+     *
+     * Le assenze vincono sempre sul nuovo turno (sessione 5): il messaggio
+     * indica il periodo bloccato e suggerisce la rimediazione.
+     */
+    private function messaggioAssenza(int $idOperatore, string $dataTurno): ?string
+    {
+        $a = $this->assenze->findAttivaPerOperatoreData($idOperatore, $dataTurno);
+        if ($a === null) {
+            return null;
+        }
+        return sprintf(
+            'L\'operatore è in assenza dal %s al %s (%s %s). Modifica il periodo di assenza se è sbagliato, o scegli un altro giorno.',
+            $this->labelData($a['data_inizio']),
+            $this->labelData($a['data_fine']),
+            $a['tipo_codice'],
+            $a['tipo_descrizione'],
+        );
     }
 
     /**

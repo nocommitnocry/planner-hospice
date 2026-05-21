@@ -41,6 +41,37 @@
             </div>
         {% endif %}
 
+        {% if inAssenza %}
+            {% if not turno %}
+                {# Cella vuota in periodo di assenza: il nuovo turno verrà rifiutato. #}
+                <div class="alert alert-danger small">
+                    <strong>Operatore in assenza.</strong>
+                    {{ inAssenza }}
+                    L'assegnazione di un nuovo turno verrà rifiutata. Modifica il periodo di assenza in
+                    <a href="{{ url('/assenze') }}">/assenze</a> se è sbagliato.
+                </div>
+            {% elseif assenzaRidondante %}
+                {# Turno esistente di tipo assenza che coincide con l'assenza programmata.
+                   Stato coerente ma ridondante: il consiglio è eliminare il turno (l'assenza
+                   già copre il giorno). La modifica del tipo turno è bloccata server-side. #}
+                <div class="alert alert-info small">
+                    <strong>Turno ridondante con un'assenza programmata.</strong>
+                    {{ inAssenza }} Il turno è già di tipo assenza coincidente: ti consigliamo di
+                    eliminarlo (l'assenza già copre il giorno). La modifica del tipo turno non è
+                    consentita: se serve cambiare, correggi prima il periodo dell'assenza.
+                </div>
+            {% else %}
+                {# Turno esistente di lavoro in periodo di assenza: vero conflitto.
+                   L'unica azione lecita è eliminare; la modifica del tipo è bloccata. #}
+                <div class="alert alert-danger small">
+                    <strong>Turno in conflitto con un'assenza.</strong>
+                    {{ inAssenza }} L'unica azione consentita è l'eliminazione del turno. Per
+                    modificarne il tipo, restringi prima il periodo dell'assenza in
+                    <a href="{{ url('/assenze') }}">/assenze</a>.
+                </div>
+            {% endif %}
+        {% endif %}
+
         {% if vincoli|length > 0 %}
             <div class="alert alert-warning small">
                 <strong>Vincoli attivi per questo operatore:</strong>
@@ -111,7 +142,11 @@
                 </div>
                 <div class="d-flex gap-2">
                     <a href="{{ url('/piani-turno/' ~ piano.id) }}" class="btn btn-outline-secondary">Annulla</a>
-                    <button type="submit" class="btn btn-primary">
+                    {# Disabilitato lato UI quando il submit fallirebbe comunque server-side:
+                       - assenza che copre la data (block sia su store sia su update);
+                       - data fuori finestra per un nuovo turno (block su store; update permesso). #}
+                    {% set submitBloccato = inAssenza or (not turno and fuoriFinestra) %}
+                    <button type="submit" class="btn btn-primary"{% if submitBloccato %} disabled{% endif %}>
                         {{ turno ? 'Salva modifiche' : 'Assegna turno' }}
                     </button>
                 </div>

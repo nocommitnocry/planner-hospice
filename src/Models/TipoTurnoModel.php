@@ -29,6 +29,26 @@ final class TipoTurnoModel extends BaseModel
         return $this->findAll('priorita', 'ASC');
     }
 
+    /**
+     * Tipi turno che rappresentano un'assenza: hanno almeno uno dei flag
+     * is_ferie / is_permesso / is_malattia / esclude_pianificazione.
+     *
+     * Usato dal dropdown "Tipo di assenza" in `/assenze`: i tipi di lavoro
+     * (M, P, N, S, R, formazione…) non hanno senso lì.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listSoloAssenze(): array
+    {
+        $sql = "SELECT * FROM {$this->table}
+                WHERE is_ferie = 1
+                   OR is_permesso = 1
+                   OR is_malattia = 1
+                   OR esclude_pianificazione = 1
+                ORDER BY priorita ASC";
+        return $this->db->query($sql);
+    }
+
     public function existsByCodice(string $codice, ?int $excludeId = null): bool
     {
         $sql = "SELECT 1 FROM {$this->table} WHERE codice = :codice";

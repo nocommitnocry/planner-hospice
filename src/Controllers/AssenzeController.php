@@ -45,7 +45,7 @@ final class AssenzeController extends BaseController
         return $this->render('assenze/form.twig', [
             'assenza'   => null,
             'operatori' => $this->operatori->listWithCategoria(soloAttivi: true),
-            'tipi'      => $this->tipi->listOrdered(),
+            'tipi'      => $this->tipi->listSoloAssenze(),
             'action'    => '/assenze',
             'titolo'    => 'Nuova assenza',
         ]);
@@ -88,7 +88,7 @@ final class AssenzeController extends BaseController
         return $this->render('assenze/form.twig', [
             'assenza'   => $assenza,
             'operatori' => $this->operatori->listWithCategoria(soloAttivi: true),
-            'tipi'      => $this->tipi->listOrdered(),
+            'tipi'      => $this->tipi->listSoloAssenze(),
             'action'    => "/assenze/{$id}",
             'titolo'    => 'Modifica assenza',
         ]);
@@ -151,7 +151,9 @@ final class AssenzeController extends BaseController
     }
 
     /**
-     * Verifica che id_operatore e id_tipo_turno puntino a record esistenti.
+     * Verifica che id_operatore e id_tipo_turno puntino a record esistenti
+     * e che il tipo turno sia effettivamente un'assenza (almeno uno tra
+     * is_ferie / is_permesso / is_malattia / esclude_pianificazione).
      *
      * @param array<string,mixed> $data
      * @return array<string,list<string>>
@@ -162,8 +164,14 @@ final class AssenzeController extends BaseController
         if ($this->operatori->find((int) $data['id_operatore']) === null) {
             $errors['id_operatore'][] = 'Operatore non trovato.';
         }
-        if ($this->tipi->find((int) $data['id_tipo_turno']) === null) {
+        $tipo = $this->tipi->find((int) $data['id_tipo_turno']);
+        if ($tipo === null) {
             $errors['id_tipo_turno'][] = 'Tipo di assenza non trovato.';
+        } elseif (!((int) $tipo['is_ferie'] === 1
+                || (int) $tipo['is_permesso'] === 1
+                || (int) $tipo['is_malattia'] === 1
+                || (int) $tipo['esclude_pianificazione'] === 1)) {
+            $errors['id_tipo_turno'][] = 'Il tipo turno selezionato non è un\'assenza (occorre almeno uno tra ferie, permesso, malattia o "esclude pianificazione").';
         }
         return $errors;
     }

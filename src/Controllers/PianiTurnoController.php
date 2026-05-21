@@ -266,6 +266,17 @@ final class PianiTurnoController extends BaseController
             $crossSettingByOpData[(int) $t['id_operatore']][(string) $t['data']] = $t;
         }
 
+        // Assenze attive sul mese per gli operatori del piano (sessione 5).
+        // Una sola query verso `assenze`; per cella si itera sulla lista
+        // piccola dell'operatore (di norma 0-2 record).
+        $idOperatori = array_map(static fn ($r) => (int) $r['id_operatore'], $operatoriDelPiano);
+        $primoDelMese  = sprintf('%04d-%02d-01', $anno, $mese);
+        $ultimoDelMese = (new \DateTimeImmutable($primoDelMese))->modify('last day of this month')->format('Y-m-d');
+        $assenzeByOp = [];
+        foreach ($this->assenze->listAttiveInPeriodo($idOperatori, $primoDelMese, $ultimoDelMese) as $a) {
+            $assenzeByOp[(int) $a['id_operatore']][] = $a;
+        }
+
         $puoModificare = $this->ruoloPuoModificare();
         $bozza = $piano['stato'] === 'bozza';
 
@@ -280,6 +291,7 @@ final class PianiTurnoController extends BaseController
             'celleEditabili'       => $puoModificare && $bozza,
             'turniByOpData'        => $turniByOpData,
             'crossSettingByOpData' => $crossSettingByOpData,
+            'assenzeByOp'          => $assenzeByOp,
         ]);
     }
 

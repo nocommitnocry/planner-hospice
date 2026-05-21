@@ -18,6 +18,11 @@ final class TurnoModel extends BaseModel
     /**
      * Tutti i turni di un piano con i campi del tipo turno necessari alla UI.
      *
+     * I flag `tipo_is_assenza` (derivato) servono al calendario per non
+     * marcare come "conflitto" un turno che è esso stesso un'assenza coincidente
+     * con un'assenza programmata (es. turno F nel periodo di un'assenza F):
+     * la ridondanza non è un conflitto, va trattata come stato coerente.
+     *
      * @return list<array<string,mixed>>
      */
     public function listByPiano(int $idPiano): array
@@ -25,7 +30,11 @@ final class TurnoModel extends BaseModel
         $sql = "SELECT t.id, t.id_piano, t.id_operatore, t.data, t.id_tipo_turno, t.note,
                        tt.codice AS tipo_codice,
                        tt.descrizione AS tipo_descrizione,
-                       tt.colore AS tipo_colore
+                       tt.colore AS tipo_colore,
+                       (tt.is_ferie = 1
+                        OR tt.is_permesso = 1
+                        OR tt.is_malattia = 1
+                        OR tt.esclude_pianificazione = 1) AS tipo_is_assenza
                 FROM turni t
                 JOIN tipi_turno tt ON tt.id = t.id_tipo_turno
                 WHERE t.id_piano = :id_piano
@@ -41,7 +50,13 @@ final class TurnoModel extends BaseModel
      */
     public function findInPianoByOperatoreData(int $idPiano, int $idOperatore, string $data): ?array
     {
-        $sql = "SELECT t.*, tt.codice AS tipo_codice, tt.descrizione AS tipo_descrizione
+        $sql = "SELECT t.*,
+                       tt.codice AS tipo_codice,
+                       tt.descrizione AS tipo_descrizione,
+                       (tt.is_ferie = 1
+                        OR tt.is_permesso = 1
+                        OR tt.is_malattia = 1
+                        OR tt.esclude_pianificazione = 1) AS tipo_is_assenza
                 FROM turni t
                 JOIN tipi_turno tt ON tt.id = t.id_tipo_turno
                 WHERE t.id_piano = :id_piano

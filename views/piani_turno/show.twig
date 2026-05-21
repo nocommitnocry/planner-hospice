@@ -138,6 +138,20 @@
                             {% set primaAssunzione = s.operatore_data_assunzione and g.date < s.operatore_data_assunzione %}
                             {% set dopoCessazione  = s.operatore_data_cessazione and g.date > s.operatore_data_cessazione %}
                             {% set fuoriFinestra = (not turno) and (not cross) and (primaAssunzione or dopoCessazione) %}
+                            {# Sessione 5: assenza che copre g.date per questo operatore.
+                               Loop O(k) con k = numero assenze dell'op che si sovrappongono
+                               al mese (di norma 0-2). Confronto lessicografico Y-m-d. #}
+                            {% set assenzaCorrente = null %}
+                            {% for a in assenzeByOp[s.id_operatore] | default([]) %}
+                                {% if assenzaCorrente is null and a.data_inizio <= g.date and a.data_fine >= g.date %}
+                                    {% set assenzaCorrente = a %}
+                                {% endif %}
+                            {% endfor %}
+                            {% set inAssenzaVuota = (not turno) and (not cross) and (not fuoriFinestra) and assenzaCorrente %}
+                            {# Conflitto solo se la cella ha un turno di LAVORO che cade in un'assenza.
+                               Se il turno è esso stesso un'assenza (F, PE, MAL, MAT, …) coincide con
+                               la situazione, è ridondante ma coerente — nessun bordo rosso. #}
+                            {% set conflittoAssenza = turno and assenzaCorrente and not turno.tipo_is_assenza %}
                             {% set cellClass = 'text-center cella-turno' ~ (g.weekend ? ' weekend' : '') %}
                             {% if cross %}
                                 {# Occupata in un altro piano dello stesso mese: overlay non cliccabile. #}
@@ -152,13 +166,21 @@
                                     title="{% if primaAssunzione %}Operatore assunto solo dal {{ s.operatore_data_assunzione|date('d/m/Y') }}{% else %}Operatore cessato il {{ s.operatore_data_cessazione|date('d/m/Y') }}{% endif %}">
                                     <span aria-hidden="true">·</span>
                                 </td>
+                            {% elseif inAssenzaVuota %}
+                                {# Dentro un'assenza programmata dell'operatore: overlay non cliccabile.
+                                   Distinto da fuori-finestra (retino diagonale) e cross-setting
+                                   (banda colorata): qui retino orizzontale + codice dell'assenza. #}
+                                <td class="{{ cellClass }} cella-in-assenza"
+                                    title="{{ assenzaCorrente.tipo_codice }} · {{ assenzaCorrente.tipo_descrizione }} — dal {{ assenzaCorrente.data_inizio|date('d/m/Y') }} al {{ assenzaCorrente.data_fine|date('d/m/Y') }}">
+                                    <span class="assenza-codice">{{ assenzaCorrente.tipo_codice }}</span>
+                                </td>
                             {% elseif celleEditabili %}
-                                <td class="{{ cellClass }} cella-editabile">
+                                <td class="{{ cellClass }} cella-editabile{% if conflittoAssenza %} cella-conflitto-assenza{% endif %}">
                                     <a class="cella-link"
                                        href="{{ url('/piani-turno/' ~ piano.id ~ '/turni/edit?operatore=' ~ s.id_operatore ~ '&data=' ~ g.date) }}"
                                        {% if turno %}
                                            style="background-color: {{ turno.tipo_colore }};"
-                                           title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}"
+                                           title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}{% if conflittoAssenza %} — in conflitto con assenza {{ assenzaCorrente.tipo_codice }} dal {{ assenzaCorrente.data_inizio|date('d/m/Y') }} al {{ assenzaCorrente.data_fine|date('d/m/Y') }}{% endif %}"
                                        {% else %}
                                            title="Assegna turno a {{ s.operatore_cognome }} {{ s.operatore_nome }} il {{ g.numero }}"
                                        {% endif %}>
@@ -166,10 +188,10 @@
                                     </a>
                                 </td>
                             {% else %}
-                                <td class="{{ cellClass }}"
+                                <td class="{{ cellClass }}{% if conflittoAssenza %} cella-conflitto-assenza{% endif %}"
                                     {% if turno %}
                                         style="background-color: {{ turno.tipo_colore }};"
-                                        title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}"
+                                        title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}{% if conflittoAssenza %} — in conflitto con assenza {{ assenzaCorrente.tipo_codice }} dal {{ assenzaCorrente.data_inizio|date('d/m/Y') }} al {{ assenzaCorrente.data_fine|date('d/m/Y') }}{% endif %}"
                                     {% endif %}>
                                     {% if turno %}{{ turno.tipo_codice }}{% else %}&nbsp;{% endif %}
                                 </td>

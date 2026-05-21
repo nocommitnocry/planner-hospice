@@ -63,6 +63,98 @@ final class AssenzaModel extends BaseModel
     }
 
     /**
+     * Ritorna l'assenza dell'operatore che copre la data indicata, o null.
+     * Se ce ne sono più (assenze sovrapposte, caso teorico) ne ritorna una
+     * qualsiasi — per il check serve solo "c'è o no" + dati per il messaggio.
+     *
+     * Confronto lessicografico su stringa Y-m-d (== cronologico).
+     *
+     * @return array{
+     *   id: int,
+     *   id_operatore: int,
+     *   id_tipo_turno: int,
+     *   data_inizio: string,
+     *   data_fine: string,
+     *   note: ?string,
+     *   tipo_codice: string,
+     *   tipo_descrizione: string,
+     * }|null
+     */
+    public function findAttivaPerOperatoreData(int $idOperatore, string $data): ?array
+    {
+        // Due placeholder distinti per la data: con ATTR_EMULATE_PREPARES=false
+        // PDO non permette di riusare lo stesso named placeholder.
+        $rows = $this->db->query(
+            "SELECT a.id, a.id_operatore, a.id_tipo_turno,
+                    a.data_inizio, a.data_fine, a.note,
+                    t.codice  AS tipo_codice,
+                    t.descrizione AS tipo_descrizione
+             FROM assenze a
+             JOIN tipi_turno t ON t.id = a.id_tipo_turno
+             WHERE a.id_operatore = :id_op
+               AND a.data_inizio <= :data_lo
+               AND a.data_fine   >= :data_hi
+             LIMIT 1",
+            ['id_op' => $idOperatore, 'data_lo' => $data, 'data_hi' => $data],
+        );
+        if ($rows === []) {
+            return null;
+        }
+        $r = $rows[0];
+        return [
+            'id'                => (int) $r['id'],
+            'id_operatore'      => (int) $r['id_operatore'],
+            'id_tipo_turno'     => (int) $r['id_tipo_turno'],
+            'data_inizio'       => (string) $r['data_inizio'],
+            'data_fine'         => (string) $r['data_fine'],
+            'note'              => $r['note'] !== null ? (string) $r['note'] : null,
+            'tipo_codice'       => (string) $r['tipo_codice'],
+            'tipo_descrizione'  => (string) $r['tipo_descrizione'],
+        ];
+    }
+
+    /**
+     * Assenze degli operatori indicati che si sovrappongono al periodo
+     * [dataInizio, dataFine] (anche parzialmente). Una sola query per evitare
+     * N query nel rendering del calendario.
+     *
+     * @param list<int> $idOperatori
+     * @return list<array{
+     *   id_operatore: int,
+     *   data_inizio: string,
+     *   data_fine: string,
+     *   tipo_codice: string,
+     *   tipo_descrizione: string,
+     * }>
+     */
+    public function listAttiveInPeriodo(array $idOperatori, string $dataInizio, string $dataFine): array
+    {
+        if ($idOperatori === []) {
+            return [];
+        }
+        // Placeholder posizionali: con IN (?,?,?...) variabile è la via pulita
+        // per evitare di costruire dinamicamente nomi unici di placeholder named
+        // (regola PDO: niente named riusati). Le due date a fine lista sono
+        // anch'esse posizionali.
+        $inPlaceholders = implode(',', array_fill(0, count($idOperatori), '?'));
+        $sql =
+            "SELECT a.id_operatore, a.data_inizio, a.data_fine,
+                    t.codice  AS tipo_codice,
+                    t.descrizione AS tipo_descrizione
+             FROM assenze a
+             JOIN tipi_turno t ON t.id = a.id_tipo_turno
+             WHERE a.id_operatore IN ({$inPlaceholders})
+               AND a.data_inizio <= ?
+               AND a.data_fine   >= ?
+             ORDER BY a.id_operatore, a.data_inizio";
+        $params = array_merge(
+            array_map(static fn ($id) => (int) $id, $idOperatori),
+            [$dataFine, $dataInizio],
+        );
+        return $this->db->query($sql, $params);
+    }
+
+    /**
      * Operatori che hanno almeno un'assenza di tipo `esclude_pianificazione=1`
      * che copre INTERAMENTE il mese (data_inizio <= primo_del_mese
      * AND data_fine >= ultimo_del_mese). Ritorna gli id_operatore distinti.

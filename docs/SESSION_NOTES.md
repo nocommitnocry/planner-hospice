@@ -599,3 +599,148 @@ Anagrafica `assenze` (ferie/malattia/permesso/maternità con `data_inizio`/`data
 I `tipi_vincolo` da info display passano a check di validazione (`no_notti` blocca tipi turno notturni, `no_weekend` blocca date di weekend, ecc.). Aggiunta del check "data turno cade dentro un'assenza dell'operatore" — ora che le assenze hanno CRUD si può consumarle in `TurniController::validateRiferimenti`. Da decidere all'apertura: warning o block, e se invalidare turni esistenti che cadono in un'assenza creata dopo.
 
 **Poi:** 6 (generatore automatico schema M-M-P-N-S-R con continuazione dal mese precedente). Vedi [[project-automazioni-popolamento]].
+
+---
+
+## Sessione 5 — 2026-05-21 — Check assenze sovrapposte ai turni
+
+### Scope ridefinito all'apertura
+
+La sessione 5 originale prevedeva "vincoli bloccanti + check assenze sovrapposte". Conversazione di dominio con Olga a inizio sessione: i `operatori_vincoli` (`no_notti`, `no_weekend`, `solo_mattine`) **non sono mai bloccanti runtime** — sono parametri del generatore automatico (sessione 6). Casi d'uso: lavoratrici in allattamento o post-maternità, ma con eccezioni quando c'è accordo per carenza drammatica di personale. Conseguenza: la coordinatrice deve poter cambiare la bozza generata come le pare.
+
+Lo scope della 5 si riduce quindi al solo check assenze. La CRUD `operatori_vincoli` (mai esistita: la tabella si riempiva a mano nel DB) + il warning leggibile nel form turno vanno in **sessione 5-bis**. Vedi `spec-sessione-5.md` e memoria `project-vincoli-operatori`.
+
+### Cosa è stato fatto
+
+- **`AssenzaModel`** — due nuovi metodi:
+  - `findAttivaPerOperatoreData(idOp, data): ?array` — ritorna l'assenza che copre quella data per quell'operatore (JOIN con `tipi_turno` per `tipo_codice`/`tipo_descrizione` utili al messaggio). Due placeholder named distinti `:data_lo`/`:data_hi` per la stessa data (regola PDO: no named riusati).
+  - `listAttiveInPeriodo(idOperatori, dataInizio, dataFine): list` — assenze degli operatori indicati che si sovrappongono al periodo, una sola query con `IN (?,?,?…)` posizionale + due `?` finali per le date. Usato dal calendario per evitare N query nel loop Twig.
+- **`TurniController`** — iniettato `AssenzaModel` come campo. Nuovo helper privato `messaggioAssenza(idOp, dataTurno): ?string` gemello di `messaggioFuoriFinestra`: chiama `findAttivaPerOperatoreData` e formatta "L'operatore è in assenza dal {labelData} al {labelData} ({codice} {descrizione}). Modifica il periodo di assenza se è sbagliato, o scegli un altro giorno."
+- **`TurniController::validateRiferimenti`** — dopo il check `messaggioFuoriFinestra`, e solo se la finestra è ok, aggiunge il check `messaggioAssenza`. Block dello `store`. `update`/`destroy` non passano per `validateRiferimenti` quindi restano permessi (simmetria col pattern fuori-finestra della 4-quinquies: permettono cleanup retroattivo dopo creazione di un'assenza che copre turni preesistenti).
+- **`TurniController::edit`** — calcola `inAssenza = $this->messaggioAssenza(...)` e lo passa alla view, parallelo a `fuoriFinestra`.
+- **`views/turni/form.twig`** — nuovo alert `{% if inAssenza %}` dopo l'alert `fuoriFinestra`. Stile: `alert-warning` (giallo) se il turno esiste già (l'utente può cambiare tipo o eliminare), `alert-danger` (rosso) se sta creando un nuovo turno (il submit fallirà). Link a `/assenze` nel caso "danger" per la rimediazione.
+- **`PianiTurnoController::show`** — costruisce `assenzeByOp[id_operatore] = list<assenza>` via `listAttiveInPeriodo` per gli operatori del piano sull'intervallo `[primo_del_mese, ultimo_del_mese]`. Passato alla view. Riusa il campo `$this->assenze` già presente dalla 4-sexies.
+- **`views/piani_turno/show.twig`** — nuovo ramo cella `.cella-in-assenza` (dopo `cross-setting` e `fuori-finestra`, prima del ramo editabile) per celle vuote in periodo di assenza: codice attenuato + tooltip "{codice} · {descrizione} — dal dd/mm/yyyy al dd/mm/yyyy". Classe aggiuntiva `.cella-conflitto-assenza` applicata sia al ramo editabile sia al display quando la cella contiene un turno che cade in un'assenza — bordo rosso interno, resta cliccabile (modifica/elimina). Iterazione O(k) su `assenzeByOp[op]` per cella (k = 0-2 nella pratica).
+- **`public/css/app.css`** — classe `.cella-in-assenza` con retino orizzontale (`repeating-linear-gradient(0deg, …)`), distinto dal retino diagonale 135° di `.cella-fuori-finestra` e dalla banda laterale colorata di `.cella-cross-setting`. Classe `.cella-conflitto-assenza` con `box-shadow: inset 0 0 0 2px #dc3545` per il bordo rosso interno sulle celle dei turni esistenti in conflitto.
+- **`views/dashboard/index.twig`** — banner aggiornato a sessione 5.
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Assenze vs nuovo turno | **Block** in `TurniController::store`. Le assenze programmate vincono sempre. Messaggio user-friendly con periodo + tipo + suggerimento "modifica il periodo di assenza o scegli un altro giorno" |
+| Assenze vs turno esistente | **Non block** in `update`/`destroy`. Simmetria col pattern fuori-finestra (4-quinquies): permette cleanup retroattivo dopo creazione di un'assenza che copre turni preesistenti |
+| Visualizzazione in calendario | Cella vuota dentro periodo di assenza → overlay `.cella-in-assenza` (retino orizzontale, distinto da `.cella-fuori-finestra` diagonale e `.cella-cross-setting` con banda colorata) con codice del tipo assenza attenuato + tooltip. Cella con turno esistente in conflitto → bordo rosso `.cella-conflitto-assenza`, cliccabile come gli altri turni per consentire modifica/elimina |
+| Helper assenza | `TurniController::messaggioAssenza` come `messaggioFuoriFinestra` — privato, ritorna `?string`, riusato da `validateRiferimenti` e `edit` |
+| Una sola query per il calendario | `AssenzaModel::listAttiveInPeriodo($idOperatori, $dataInizio, $dataFine)` per evitare N query nel ciclo Twig. Tutta l'iterazione cella-per-cella legge dalla mappa in memoria; il loop su `assenzeByOp[op]` è O(k) con k tipicamente 0-2 |
+| Precedenza nei rami della cella | Ordine: `turno` (eventualmente con `.cella-conflitto-assenza`) → `cross-setting` → `fuori-finestra` → `in-assenza` → `+ editabile` → display vuoto. Coerente col fatto che mutue esclusioni reali (assenza dentro fuori-finestra, cross-setting durante una cessazione) sono casi degeneri |
+| Confronto date | Lessicografico su stringa `Y-m-d` (== cronologico), coerente con 4-quinquies/4-sexies sia in PHP sia in Twig |
+| Niente cleanup automatico turni→assenza retroattiva | Quando un'assenza creata dopo copre turni esistenti, i turni restano e vengono segnalati con bordo rosso nel calendario e alert giallo nel form `edit`. La coordinatrice decide caso per caso (cambia tipo, elimina, oppure modifica/elimina l'assenza). Coerente con la 4-sexies (non rimuoviamo automaticamente operatori per maternità retroattiva) |
+| `AssenzeController::store` | **Nessun check di turni in conflitto** alla creazione di un'assenza retroattiva. Il conflitto è visibile dal piano (bordo rosso). Eventuale flash post-store "trovati N turni in conflitto" rinviato a 5-bis se necessario |
+| Vincoli operatori | Restano come oggi: warning informativo in `form.twig`, niente check bloccante. CRUD + warning testuale leggibile scorporati in 5-bis. Motivo: non sono bloccanti per design (input del generatore della 6, derogabili dalla coordinatrice in caso di carenza personale). Vedi memoria `project-vincoli-operatori` |
+| PDO posizionali in `listAttiveInPeriodo` | `IN (?,?,?…)` variabile + due `?` finali per le date. Pattern coerente con `deleteByAnnoMeseEscludendoOperatori` della 4-ter (poi rimosso) e con la regola "no named placeholder riusati" |
+
+### Da fare prima della prossima sessione (lato utente)
+
+1. `composer dump-autoload` (non strettamente necessario in dev col PSR-4, ma utile).
+2. Riavviare `php -S localhost:8000 -t public/` e con utente **admin** o **caposala**:
+
+   **Test 1 — Block su nuovo turno in periodo di assenza**
+   - Op X attivo, nessuna assenza. Piano in bozza per maggio 2026.
+   - Crea un'assenza per X dal 2026-05-10 al 2026-05-15 tipo `F` (ferie).
+   - Apri il piano: la cella di X il giorno 12 deve essere overlay retino orizzontale grigio, codice `F` italico attenuato, tooltip "F · Ferie — dal 10/05/2026 al 15/05/2026", cursor not-allowed.
+   - Tenta via URL `/piani-turno/{id}/turni/edit?operatore={X}&data=2026-05-12`: il form si apre con alert rosso "Operatore in assenza" e indicazione del periodo + link a `/assenze`.
+   - Submit del POST con un tipo turno selezionato: deve fallire con messaggio "L'operatore è in assenza dal lun 10/05/2026 al ven 15/05/2026 (F Ferie). Modifica il periodo di assenza se è sbagliato, o scegli un altro giorno." e old input ripopolato.
+
+   **Test 2 — Edit/elimina di turno esistente che diventa in conflitto**
+   - Op X, nessuna assenza. Assegna un turno `M` il 2026-05-12.
+   - Crea un'assenza per X dal 2026-05-10 al 2026-05-15.
+   - Torna al piano: la cella del giorno 12 mostra `M` colorato come prima, ma con **bordo rosso** interno (`.cella-conflitto-assenza`). Tooltip esteso include "in conflitto con assenza F dal 10/05/2026 al 15/05/2026".
+   - Cliccala: il form si apre con alert giallo "Turno in periodo di assenza" + indicazione del periodo.
+   - Cambia tipo a `F` e salva: deve **riuscire** (update non bloccato).
+   - Elimina il turno dal form: deve **riuscire** (destroy non bloccato).
+   - Riapri la cella ora vuota: il form si apre con alert rosso "Operatore in assenza" e il submit fallisce come Test 1.
+
+   **Test 3 — Boundary date**
+   - Assenza per X dal 2026-05-10 al 2026-05-15.
+   - Nuovo turno il 9: OK. Il 10: KO. Il 15: KO. Il 16: OK.
+
+   **Test 4 — Assenze sovrapposte (caso teorico)**
+   - Due assenze per X: `F` dal 1 al 10 e `PE` dal 8 al 20.
+   - Nuovo turno il 9 deve essere bloccato. Il messaggio cita una delle due (non importa quale).
+
+   **Test 5 — Assenza in altro mese non interferisce**
+   - Op X con assenza giugno 2026 intero. Piano maggio 2026 in bozza.
+   - Calendario di maggio: nessuna cella in overlay assenza; tutti i giorni assegnabili.
+   - Piano giugno 2026 (se esiste): tutto il mese in overlay.
+
+   **Test 6 — Combinazione con fuori-finestra**
+   - Op X con `data_cessazione = 2026-05-25` e assenza `F` dal 2026-05-20 al 2026-05-24.
+   - Calendario maggio:
+     - 20-24: overlay `.cella-in-assenza` (priorità: la cella non è ancora fuori finestra).
+     - 25: cella vuota cliccabile `+`.
+     - 26-31: overlay `.cella-fuori-finestra`.
+
+   **Test 7 — Read-only / visualizzatore**
+   - Pubblica un piano con celle in overlay assenza.
+   - Loggati come visualizzatore: overlay visibile, tooltip funzionante, nessuna cella cliccabile, turni esistenti in conflitto restano col bordo rosso ma read-only.
+
+   **Test 8 — URL manipolato per forzare il submit**
+   - Op X con assenza dal 10 al 15. Piano in bozza.
+   - URL `/piani-turno/{id}/turni/edit?operatore={X}&data=2026-05-12`: il form si apre con alert rosso (preview lato edit).
+   - Submit POST con tipo turno: deve fallire con il check server-side in `validateRiferimenti`.
+
+3. Loggati con **visualizzatore**: nessuna nuova azione da fare ma verifica i punti 7-Test 7 sopra.
+
+### Iterazione post-test — Tipi turno "assenza" derivati
+
+Olga durante il Test 2 ha sollevato due incoerenze legate alla tassonomia dei tipi turno:
+
+1. Il dropdown «Tipo di assenza» in `/assenze/create` mostrava **tutti** i tipi turno, inclusi quelli di lavoro (M, P, N, S, R) — incoerente con la semantica del form.
+2. Dopo aver modificato un turno `M` (lavoro) in `F` (ferie) nel Test 2, il bordo rosso `.cella-conflitto-assenza` persisteva. Concettualmente sbagliato: se il turno è esso stesso un'assenza coincidente con l'assenza programmata, è ridondanza coerente, non conflitto.
+
+**Decisione di design**: invece di rifare il form `/tipi-turno` con radio "Lavoro / Assenza" (refactor più ampio che tocca il `SaldoRicalcoloService`, la 6 e il calcolo ore), **deriviamo** "tipo è assenza" dai flag esistenti `is_ferie OR is_permesso OR is_malattia OR esclude_pianificazione`. Niente nuova colonna, niente migration.
+
+**Modifiche**:
+- `TipoTurnoModel::listSoloAssenze()` — nuova: ritorna i tipi turno con almeno uno dei quattro flag attivi, ordinati per `priorita`.
+- `AssenzeController::create`/`edit` — passa `listSoloAssenze()` al form. URL manipolato che forza un tipo "lavoro" come assenza rifiutato in `verificaRiferimenti` (controllo applicativo aggiunto: il tipo deve avere almeno uno dei quattro flag, altrimenti errore esplicito sul campo `id_tipo_turno`).
+- `TurnoModel::listByPiano` + `findInPianoByOperatoreData` — espongono `tipo_is_assenza` come campo derivato (espressione SQL `(is_ferie=1 OR is_permesso=1 OR is_malattia=1 OR esclude_pianificazione=1)`).
+- `views/piani_turno/show.twig` — `conflittoAssenza` diventa `turno and assenzaCorrente and not turno.tipo_is_assenza`. Niente bordo rosso per turni `F`/`PE`/`MAL`/`MAT` in periodo di assenza.
+- `TurniController::edit` — sopprime l'alert `inAssenza` se il turno esistente ha `tipo_is_assenza=1` (la cella mostra già il tipo assenza, l'alert sarebbe rumore).
+
+**Casi coerenti dopo il fix**:
+- Cambio `M → F` su cella in assenza: bordo rosso sparisce, alert nel form non compare. ✓
+- Cella vuota in periodo di assenza dopo eliminazione del turno: resta overlay `.cella-in-assenza`, non cliccabile per nuovo turno. Stato finale già osservato come corretto da Olga. ✓
+- URL manipolato `/assenze/store` con tipo `M`: rifiutato dal nuovo check in `verificaRiferimenti`. ✓
+
+### Iterazione 2 post-test — Update del turno bloccato in conflitto
+
+Olga dopo il fix tipi-assenza ha proposto una restrizione ulteriore: **l'unica azione lecita su un turno che cade in un'assenza è l'eliminazione**. La modifica non è una funzionalità necessaria — se la coordinatrice è sicura che si cambia, corregge l'assenza (restringe il periodo) o elimina il turno.
+
+**Decisione**: le assenze vincono sempre, principio rafforzato. `update` ora rifiuta qualsiasi modifica al turno se la sua data cade in un'assenza dell'operatore (sia caso "conflitto" che "ridondanza coerente"). `destroy` resta permesso.
+
+**Modifiche**:
+- `TurniController::update` — check `messaggioAssenza` sulla `(id_operatore, data)` del turno PRIMA della validazione del nuovo input. Se trovato, redirect a `show` con flash error: "Modifica non consentita: {messaggio}. Per modificare il tipo turno, restringi prima il periodo dell'assenza; per rimuovere il turno usa Elimina."
+- `TurniController::edit` — calcola sempre `inAssenza` (ripristinato rispetto all'iterazione precedente). Nuova variabile `assenzaRidondante = inAssenza !== null && turnoIsAssenza` per differenziare il tono nell'alert.
+- `views/turni/form.twig` — tre rami distinti nell'alert assenza:
+  1. nuovo turno → `alert-danger` "Operatore in assenza. L'assegnazione di un nuovo turno verrà rifiutata."
+  2. turno esistente lavoro in periodo di assenza → `alert-danger` "Turno in conflitto con un'assenza. L'unica azione consentita è l'eliminazione."
+  3. turno esistente assenza coincidente (`assenzaRidondante`) → `alert-info` "Turno ridondante con un'assenza programmata. Ti consigliamo di eliminarlo."
+- `views/turni/form.twig` — bottone "Salva modifiche" / "Assegna turno" con attributo `disabled` quando `inAssenza` (sempre) o `not turno and fuoriFinestra` (nuovo turno fuori finestra). Defense-in-depth: il controllo vero resta server-side; il `disabled` HTML evita all'utente di provare senza esito.
+
+**Nota su `fuoriFinestra`**: invariato. Su turno esistente fuori-finestra (caso "data_cessazione retroattiva") la modifica resta permessa, perché serve a pulire turni preesistenti. Il bottone "Salva modifiche" resta abilitato in quel caso.
+
+**Casi finali**:
+- Cella M in periodo F → bordo rosso, click apre form con alert danger "conflitto", bottone "Salva modifiche" disabled, "Elimina turno" attivo. Elimina riporta la cella a overlay assenza. ✓
+- Cella F (era M, cambiata) in periodo F coincidente → niente bordo (ridondanza coerente, non conflitto), click apre form con alert info "ridondante", bottone disabilitato, elimina attivo. ✓
+- Tentativo di forzare modifica via URL → `update` ritorna errore con messaggio chiaro.
+
+### Punto aperto rinviato — Tassonomia tipi turno
+
+Il form `/tipi-turno/edit` continua a esporre `is_ferie`/`is_permesso`/`is_malattia`/`esclude_pianificazione` come flag separati nella sezione «Categoria del turno». Olga ha proposto una rivisitazione in due radio top-level «Lavoro / Assenza» con il dettaglio derivato dal `codice`. Non implementato qui: tocca anche il calcolo ore nel `SaldoRicalcoloService` (che oggi partiziona via i flag) e gli schemi di conteggio della sessione 6 (`project-conteggio-ore-assenze`). Sarà rivisto contestualmente alla 6.
+
+### Prossima sessione (5-bis) — CRUD `operatori_vincoli` + warning leggibile
+
+Aggiungere il CRUD per i vincoli operatori (pattern `AssenzeController`), con `<select>` chiuso dei tre codici riconosciuti (`no_notti`, `no_weekend`, `solo_mattine`) al posto della stringa libera attuale. Sostituire l'alert `<code>no_notti</code>` + "Verifica manualmente" nel form turno con frase leggibile ("L'operatrice non dovrebbe fare turni notturni — accordo per carenza personale?"), non bloccante. Da decidere all'apertura: posizione UI (top-level `/vincoli` come `/assenze` o nidificato `/operatori/{id}/vincoli`), eventuale flash post-`AssenzeController::store` se l'assenza appena creata copre turni esistenti (numero + link al piano). Vedi memoria `project-vincoli-operatori`.
+
+**Poi:** 6 (generatore automatico schema M-M-P-N-S-R con continuazione dal mese precedente). Vedi [[project-automazioni-popolamento]].

@@ -6,11 +6,13 @@
 <h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
 
 <div class="alert alert-info">
-    <strong>Sessione 4-sexies completata.</strong> CRUD assenze (ferie, permessi, malattia,
-    maternità) con periodi dal-al e nuovo flag <code>tipi_turno.esclude_pianificazione</code>:
-    gli operatori con un'assenza di un tipo "esclude pianificazione" che copre l'intero mese
-    non vengono fotografati nei piani che si creano per quel mese (caso d'uso: maternità nascoste).
-    Prossime sessioni: vincoli bloccanti (5), generatore automatico (6).
+    <strong>Sessione 5 completata.</strong> Le assenze programmate vincono sempre
+    sui nuovi turni: un'assegnazione in un giorno coperto da un'assenza dell'operatore
+    viene rifiutata con messaggio user-friendly. I turni esistenti che si trovano sovrapposti
+    a un'assenza creata dopo restano modificabili/eliminabili (cleanup retroattivo): sono
+    evidenziati con bordo rosso nel calendario e con alert nel form. Le celle vuote in
+    periodo di assenza diventano overlay non cliccabili con il codice del tipo assenza.
+    Prossime sessioni: 5-bis (CRUD vincoli operatori), 6 (generatore automatico).
 </div>
 
 <div class="row g-3">
