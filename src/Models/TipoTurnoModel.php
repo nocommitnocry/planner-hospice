@@ -21,6 +21,7 @@ final class TipoTurnoModel extends BaseModel
         'is_malattia',
         'is_formazione',
         'esclude_pianificazione',
+        'schema_ore',
     ];
 
     /** @return list<array<string,mixed>> */

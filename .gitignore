@@ -34,3 +34,5 @@ Thumbs.db
 *.bak
 *.orig
 *~
+# Dump del DB (contengono dati reali del personale: mai nel repo)
+backup-*.sql

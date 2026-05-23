@@ -11,10 +11,14 @@ use App\Models\OperatoreModel;
 use App\Models\PianoOperatoreModel;
 use App\Models\PianoTurnoModel;
 use App\Models\SaldoOreModel;
+use App\Models\SchemaPassoModel;
+use App\Models\SchemaTurnazioneModel;
 use App\Models\SettingModel;
 use App\Models\TurnoModel;
+use App\Models\VincoloOperatoreModel;
 use App\Routing\Request;
 use App\Routing\Response;
+use App\Services\GeneratoreService;
 use App\Services\SaldoRicalcoloService;
 use App\Validators\PianoTurnoValidator;
 use PDOException;
@@ -45,6 +49,7 @@ final class PianiTurnoController extends BaseController
     private PianoOperatoreModel $pianoOperatori;
     private AssenzaModel $assenze;
     private SaldoRicalcoloService $ricalcolo;
+    private GeneratoreService $generatore;
     private Database $db;
 
     private const MESI_IT = [
@@ -65,6 +70,16 @@ final class PianiTurnoController extends BaseController
         $this->assenze = new AssenzaModel();
         $this->ricalcolo = new SaldoRicalcoloService($this->saldi, $this->turni);
         $this->db = Container::instance()->get(Database::class);
+        $this->generatore = new GeneratoreService(
+            $this->piani,
+            $this->pianoOperatori,
+            new SchemaTurnazioneModel(),
+            new SchemaPassoModel(),
+            $this->turni,
+            new VincoloOperatoreModel(),
+            $this->assenze,
+            $this->ricalcolo,
+        );
     }
 
     public function index(Request $request): Response
@@ -232,6 +247,62 @@ final class PianiTurnoController extends BaseController
             'operatori' => count($operatoriDelPiano),
         ]);
         return $this->redirect("/piani-turno/{$idPiano}", 'success', 'Piano creato in bozza con i saldi iniziali.');
+    }
+
+    /**
+     * Popolamento automatico della bozza per CONTINUAZIONE dal mese precedente
+     * pubblicato (sessione 6, Automatismo 2). Solo bozza, admin+caposala.
+     *
+     * Insert dei turni + ricalcolo saldi in un'unica transazione (delega a
+     * GeneratoreService). I turni e i giorni di assenza già presenti non vengono
+     * toccati; gli operatori non continuabili finiscono nel riepilogo come
+     * "da assegnare a mano".
+     */
+    public function genera(Request $request): Response
+    {
+        $id = (int) $request->param('id');
+        $piano = $this->piani->find($id);
+        if ($piano === null) {
+            return $this->redirect('/piani-turno', 'error', 'Piano non trovato.');
+        }
+        if ($piano['stato'] !== 'bozza') {
+            return $this->redirect("/piani-turno/{$id}", 'error', 'Il popolamento automatico è ammesso solo sui piani in bozza.');
+        }
+
+        try {
+            $result = $this->db->transaction(fn (): array => $this->generatore->generaDaMesePrecedente($id));
+        } catch (PDOException $e) {
+            Logger::get()->error('Generazione piano fallita', ['id' => $id, 'errore' => $e->getMessage()]);
+            return $this->redirect("/piani-turno/{$id}", 'error', 'Generazione non riuscita per un errore interno. Riprova o assegna a mano.');
+        }
+
+        if (!$result['ok']) {
+            return $this->redirect("/piani-turno/{$id}", 'error', (string) $result['errore']);
+        }
+
+        Logger::get()->info('Piano popolato per continuazione', [
+            'id'       => $id,
+            'origine'  => $result['mese_origine'],
+            'turni'    => $result['turni_creati'],
+            'popolati' => count($result['popolati']),
+            'manuali'  => count($result['manuali']),
+            'user_id'  => $this->currentUserId(),
+        ]);
+
+        $msg = sprintf(
+            'Bozza popolata continuando da %s: %d turni per %d operatori.',
+            $result['mese_origine'],
+            $result['turni_creati'],
+            count($result['popolati']),
+        );
+        if ($result['manuali'] !== []) {
+            $nomi = array_map(
+                static fn ($m) => $m['operatore'] . ' (' . $m['motivo'] . ')',
+                $result['manuali'],
+            );
+            $msg .= ' Da assegnare a mano: ' . implode('; ', $nomi) . '.';
+        }
+        return $this->redirect("/piani-turno/{$id}", 'success', $msg);
     }
 
     public function show(Request $request): Response

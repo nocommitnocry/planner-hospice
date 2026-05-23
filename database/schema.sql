@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS tipi_turno (
     is_malattia BOOLEAN NOT NULL DEFAULT FALSE,
     is_formazione BOOLEAN NOT NULL DEFAULT FALSE,
     esclude_pianificazione BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Se 1, gli operatori con assenza di questo tipo che copre l''intero mese non vengono fotografati nel piano (es. maternita)',
+    schema_ore ENUM('da_schema', 'maternita_8_6_0', 'zero') NOT NULL DEFAULT 'da_schema' COMMENT 'Regola di conteggio ore quando il tipo e'' un''assenza: da_schema | maternita_8_6_0 (8/6/0) | zero',
     creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -193,6 +194,7 @@ CREATE TABLE IF NOT EXISTS turni (
     id_operatore INT NOT NULL,
     data DATE NOT NULL,
     id_tipo_turno INT NOT NULL,
+    ore_effettive DECIMAL(4,2) NULL COMMENT 'Ore lavorate del turno (Opzione B). NULL => fallback a tipi_turno.ore_conteggiate',
     note TEXT,
     creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -205,6 +207,42 @@ CREATE TABLE IF NOT EXISTS turni (
     UNIQUE KEY uk_turni_operatore_data (id_operatore, data),
     INDEX idx_turni_piano (id_piano),
     INDEX idx_turni_data (data)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- Schemi di turnazione (dati configurabili per il generatore).
+--
+-- Due famiglie: 'ciclico' (periodo N giorni, posizione-based: Hospice inf/OSS)
+-- e 'settimanale' (periodo 7, giorno-settimana-based: coordinatrice, UCP-DOM).
+-- I passi portano sia il tipo proposto sia le ore (lavorate vs assenza, che
+-- divergono per la vestizione e per gli orari variabili per giorno di UCP-DOM).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS schemi_turnazione (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codice VARCHAR(40) NOT NULL UNIQUE,
+    nome VARCHAR(100) NOT NULL,
+    id_setting INT NOT NULL,
+    famiglia ENUM('ciclico', 'settimanale') NOT NULL,
+    periodo_giorni TINYINT NOT NULL COMMENT '6 per il ciclo Hospice, 7 per i settimanali',
+    attivo BOOLEAN NOT NULL DEFAULT TRUE,
+    creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_schema_setting FOREIGN KEY (id_setting)
+        REFERENCES setting(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS schema_passi (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    id_schema INT NOT NULL,
+    posizione TINYINT NOT NULL COMMENT '0..periodo-1 (ciclico) oppure 0=lun..6=dom (settimanale)',
+    id_tipo_turno INT NULL COMMENT 'Tipo proposto dal generatore; NULL = nessun turno',
+    ore_lavorate DECIMAL(4,2) NULL COMMENT 'ore_effettive da scrivere sul turno generato',
+    ore_assenza DECIMAL(4,2) NOT NULL DEFAULT 0.00 COMMENT 'Ore contate se questa posizione e'' un''assenza (base, no vestizione)',
+    CONSTRAINT fk_passo_schema FOREIGN KEY (id_schema)
+        REFERENCES schemi_turnazione(id) ON DELETE CASCADE,
+    CONSTRAINT fk_passo_tipo FOREIGN KEY (id_tipo_turno)
+        REFERENCES tipi_turno(id) ON DELETE RESTRICT,
+    UNIQUE KEY uk_passo_schema_posizione (id_schema, posizione)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
@@ -339,20 +377,126 @@ INSERT INTO categorie_operatori (nome, descrizione, ordine_visualizzazione) VALU
     ('OSS',        'Operatori socio-sanitari', 2),
     ('COORD.',     'Coordinatori e caposala', 3);
 
+-- Ore M/P/N/G gia' comprensive della vestizione (+0,25h, decisa 2026-05-23,
+-- da confermare alla demo). D NON ha vestizione. Le ore di ASSENZA (base, senza
+-- vestizione) vivono sui passi degli schemi piu' sotto.
 INSERT INTO tipi_turno
     (codice, descrizione, ora_inizio, ora_fine, colore, ore_conteggiate, priorita,
-     is_riposo, is_ferie, is_permesso, is_malattia, is_formazione) VALUES
-    ('M',  'Mattina',    '07:00:00', '14:30:00', '#FFFFFF',  7.50, 10, 0, 0, 0, 0, 0),
-    ('P',  'Pomeriggio', '13:45:00', '21:30:00', '#FFFFFF',  7.75, 20, 0, 0, 0, 0, 0),
-    ('N',  'Notte',      '21:00:00', '07:30:00', '#FFCCCC', 10.50, 30, 0, 0, 0, 0, 0),
-    ('S',  'Smonto',     NULL,       NULL,       '#CCCCFF',  0.00, 45, 1, 0, 0, 0, 0),
-    ('R',  'Riposo',     NULL,       NULL,       '#CCFFCC',  0.00, 40, 1, 0, 0, 0, 0),
-    ('F',  'Ferie',      NULL,       NULL,       '#FFFFCC',  7.50, 50, 0, 1, 0, 0, 0),
-    ('D',  'Domicilio',  '14:30:00', '21:30:00', '#66CCFF',  7.00, 25, 0, 0, 0, 0, 0),
-    ('G',  'Giornata',   '08:00:00', '16:00:00', '#FFCC99',  8.00,  5, 0, 0, 0, 0, 0),
-    ('C',  'Corso',      NULL,       NULL,       '#FF99CC',  7.50, 60, 0, 0, 0, 0, 1),
-    ('MA', 'Malattia',   NULL,       NULL,       '#FFCC99',  7.50, 55, 0, 0, 0, 1, 0),
-    ('PE', 'Permesso',   NULL,       NULL,       '#E0E0E0',  7.50, 52, 0, 0, 1, 0, 0);
+     is_riposo, is_ferie, is_permesso, is_malattia, is_formazione, esclude_pianificazione, schema_ore) VALUES
+    ('M',  'Mattina',                '07:00:00', '14:30:00', '#FFFFFF',  7.75, 10, 0,0,0,0,0,0, 'da_schema'),
+    ('P',  'Pomeriggio',             '13:45:00', '21:30:00', '#FFFFFF',  8.00, 20, 0,0,0,0,0,0, 'da_schema'),
+    ('N',  'Notte',                  '21:00:00', '07:30:00', '#FFCCCC', 10.75, 30, 0,0,0,0,0,0, 'da_schema'),
+    ('S',  'Smonto',                 NULL,       NULL,       '#CCCCFF',  0.00, 45, 1,0,0,0,0,0, 'da_schema'),
+    ('R',  'Riposo',                 NULL,       NULL,       '#CCFFCC',  0.00, 40, 1,0,0,0,0,0, 'da_schema'),
+    ('F',  'Ferie',                  NULL,       NULL,       '#FFFFCC',  7.50, 50, 0,1,0,0,0,0, 'da_schema'),
+    ('D',  'Domicilio',              '07:00:00', '14:30:00', '#66CCFF',  7.50, 25, 0,0,0,0,0,0, 'da_schema'),
+    ('G',  'Giornata',               '08:00:00', '15:30:00', '#FFCC99',  7.75,  5, 0,0,0,0,0,0, 'da_schema'),
+    ('C',  'Corso',                  NULL,       NULL,       '#FF99CC',  7.50, 60, 0,0,0,0,1,0, 'da_schema'),
+    ('MA', 'Malattia',               NULL,       NULL,       '#FFCC99',  7.50, 55, 0,0,0,1,0,0, 'da_schema'),
+    ('PE', 'Permesso',               NULL,       NULL,       '#E0E0E0',  7.50, 52, 0,0,1,0,0,0, 'da_schema'),
+    -- Lavoro UCP-DOM (ore variabili per giorno: il valore qui e' default/fallback)
+    ('UI', 'Inferm. domiciliare UCP','09:00:00', '17:00:00', '#99CCFF',  8.00, 12, 0,0,0,0,0,0, 'da_schema'),
+    ('UO', 'OSS domiciliare UCP',    '08:00:00', '15:15:00', '#99FFCC',  7.25, 14, 0,0,0,0,0,0, 'da_schema'),
+    ('Rec','Recupero',               NULL,       NULL,       '#FFD699',  8.00, 35, 0,0,0,0,0,0, 'da_schema'),
+    -- Straordinari Hospice (ore base, solo manuali)
+    ('Ms', 'Mattina straord.',       '07:00:00', '14:30:00', '#E6E6E6',  7.50, 11, 0,0,0,0,0,0, 'da_schema'),
+    ('Ps', 'Pomeriggio straord.',    '13:45:00', '21:30:00', '#E6E6E6',  7.75, 21, 0,0,0,0,0,0, 'da_schema'),
+    ('Ns', 'Notte straord.',         '21:00:00', '07:30:00', '#F0CCCC', 10.50, 31, 0,0,0,0,0,0, 'da_schema'),
+    -- Assenze (contano "quanto lo schema")
+    ('L',  'Lutto',                  NULL, NULL, '#D9D9D9', 7.50, 53, 0,0,1,0,0,0, 'da_schema'),
+    ('CM', 'Congedo matrimoniale',   NULL, NULL, '#FFE0F0', 7.50, 56, 0,0,1,0,0,0, 'da_schema'),
+    ('CP', 'Congedo paternità',      NULL, NULL, '#E0F0FF', 7.50, 57, 0,0,1,0,0,0, 'da_schema'),
+    ('104','Permesso L.104',         NULL, NULL, '#FFEFC0', 7.50, 58, 0,0,1,0,0,0, 'da_schema'),
+    ('INF','Infortunio',             NULL, NULL, '#FFB3B3', 7.50, 54, 0,0,0,1,0,0, 'da_schema'),
+    ('PST','Permesso studio',        NULL, NULL, '#D0E8D0', 7.50, 59, 0,0,1,0,0,0, 'da_schema'),
+    ('DS', 'Donazione sangue',       NULL, NULL, '#FFC0C0', 7.50, 61, 0,0,1,0,0,0, 'da_schema'),
+    ('EL', 'Permesso elettorale',    NULL, NULL, '#D0D0F0', 7.50, 62, 0,0,1,0,0,0, 'da_schema'),
+    -- Aspettativa: nasconde se mese intero (esclude_pianificazione) e conta 0 (deficit visibile)
+    ('ASP','Aspettativa',            NULL, NULL, '#CCCCCC', 0.00, 65, 0,0,0,0,0,1, 'zero');
+
+-- -----------------------------------------------------------------------------
+-- Schemi di turnazione concreti (6: 4 Hospice + 2 UCP-DOM) e relativi passi
+-- -----------------------------------------------------------------------------
+INSERT INTO schemi_turnazione (codice, nome, id_setting, famiglia, periodo_giorni, attivo) VALUES
+    ('hospice_regolare',     'Hospice — ciclo regolare', (SELECT id FROM setting WHERE codice='hospice'), 'ciclico',     6, 1),
+    ('hospice_solo_mattine', 'Hospice — solo mattine',   (SELECT id FROM setting WHERE codice='hospice'), 'ciclico',     6, 1),
+    ('hospice_no_notti',     'Hospice — senza notti',    (SELECT id FROM setting WHERE codice='hospice'), 'ciclico',     6, 1),
+    ('hospice_coordinatrice','Hospice — coordinatrice',  (SELECT id FROM setting WHERE codice='hospice'), 'settimanale', 7, 1),
+    ('ucpdom_infermieri',    'UCP-DOM — infermieri',     (SELECT id FROM setting WHERE codice='ucp_dom'), 'settimanale', 7, 1),
+    ('ucpdom_oss',           'UCP-DOM — OSS',            (SELECT id FROM setting WHERE codice='ucp_dom'), 'settimanale', 7, 1);
+
+SET @t_M  := (SELECT id FROM tipi_turno WHERE codice='M');
+SET @t_P  := (SELECT id FROM tipi_turno WHERE codice='P');
+SET @t_N  := (SELECT id FROM tipi_turno WHERE codice='N');
+SET @t_S  := (SELECT id FROM tipi_turno WHERE codice='S');
+SET @t_R  := (SELECT id FROM tipi_turno WHERE codice='R');
+SET @t_G  := (SELECT id FROM tipi_turno WHERE codice='G');
+SET @t_UI := (SELECT id FROM tipi_turno WHERE codice='UI');
+SET @t_UO := (SELECT id FROM tipi_turno WHERE codice='UO');
+
+SET @sc_reg  := (SELECT id FROM schemi_turnazione WHERE codice='hospice_regolare');
+SET @sc_solm := (SELECT id FROM schemi_turnazione WHERE codice='hospice_solo_mattine');
+SET @sc_nonot:= (SELECT id FROM schemi_turnazione WHERE codice='hospice_no_notti');
+SET @sc_coord:= (SELECT id FROM schemi_turnazione WHERE codice='hospice_coordinatrice');
+SET @sc_uinf := (SELECT id FROM schemi_turnazione WHERE codice='ucpdom_infermieri');
+SET @sc_uoss := (SELECT id FROM schemi_turnazione WHERE codice='ucpdom_oss');
+
+-- Hospice regolare: M M P N S R
+INSERT INTO schema_passi (id_schema, posizione, id_tipo_turno, ore_lavorate, ore_assenza) VALUES
+    (@sc_reg, 0, @t_M, 7.75, 7.50),
+    (@sc_reg, 1, @t_M, 7.75, 7.50),
+    (@sc_reg, 2, @t_P, 8.00, 7.75),
+    (@sc_reg, 3, @t_N, 10.75, 10.50),
+    (@sc_reg, 4, @t_S, 0.00, 0.00),
+    (@sc_reg, 5, @t_R, 0.00, 0.00);
+
+-- Hospice solo mattine: M M M M R R
+INSERT INTO schema_passi (id_schema, posizione, id_tipo_turno, ore_lavorate, ore_assenza) VALUES
+    (@sc_solm, 0, @t_M, 7.75, 7.50),
+    (@sc_solm, 1, @t_M, 7.75, 7.50),
+    (@sc_solm, 2, @t_M, 7.75, 7.50),
+    (@sc_solm, 3, @t_M, 7.75, 7.50),
+    (@sc_solm, 4, @t_R, 0.00, 0.00),
+    (@sc_solm, 5, @t_R, 0.00, 0.00);
+
+-- Hospice no notti: M M P P R R
+INSERT INTO schema_passi (id_schema, posizione, id_tipo_turno, ore_lavorate, ore_assenza) VALUES
+    (@sc_nonot, 0, @t_M, 7.75, 7.50),
+    (@sc_nonot, 1, @t_M, 7.75, 7.50),
+    (@sc_nonot, 2, @t_P, 8.00, 7.75),
+    (@sc_nonot, 3, @t_P, 8.00, 7.75),
+    (@sc_nonot, 4, @t_R, 0.00, 0.00),
+    (@sc_nonot, 5, @t_R, 0.00, 0.00);
+
+-- Hospice coordinatrice (settimanale, 0=lun..6=dom): G lun-ven, R sab-dom
+INSERT INTO schema_passi (id_schema, posizione, id_tipo_turno, ore_lavorate, ore_assenza) VALUES
+    (@sc_coord, 0, @t_G, 7.75, 7.50),
+    (@sc_coord, 1, @t_G, 7.75, 7.50),
+    (@sc_coord, 2, @t_G, 7.75, 7.50),
+    (@sc_coord, 3, @t_G, 7.75, 7.50),
+    (@sc_coord, 4, @t_G, 7.75, 7.50),
+    (@sc_coord, 5, @t_R, 0.00, 0.00),
+    (@sc_coord, 6, @t_R, 0.00, 0.00);
+
+-- UCP-DOM infermieri (settimanale): UI lun-gio 8h, ven 6h, R sab-dom
+INSERT INTO schema_passi (id_schema, posizione, id_tipo_turno, ore_lavorate, ore_assenza) VALUES
+    (@sc_uinf, 0, @t_UI, 8.00, 8.00),
+    (@sc_uinf, 1, @t_UI, 8.00, 8.00),
+    (@sc_uinf, 2, @t_UI, 8.00, 8.00),
+    (@sc_uinf, 3, @t_UI, 8.00, 8.00),
+    (@sc_uinf, 4, @t_UI, 6.00, 6.00),
+    (@sc_uinf, 5, @t_R,  0.00, 0.00),
+    (@sc_uinf, 6, @t_R,  0.00, 0.00);
+
+-- UCP-DOM OSS (settimanale): UO lun-ven 7,25h, sab 4,25h, R dom
+INSERT INTO schema_passi (id_schema, posizione, id_tipo_turno, ore_lavorate, ore_assenza) VALUES
+    (@sc_uoss, 0, @t_UO, 7.25, 7.25),
+    (@sc_uoss, 1, @t_UO, 7.25, 7.25),
+    (@sc_uoss, 2, @t_UO, 7.25, 7.25),
+    (@sc_uoss, 3, @t_UO, 7.25, 7.25),
+    (@sc_uoss, 4, @t_UO, 7.25, 7.25),
+    (@sc_uoss, 5, @t_UO, 4.25, 4.25),
+    (@sc_uoss, 6, @t_R,  0.00, 0.00);
 
 -- -----------------------------------------------------------------------------
 -- L'utente amministratore va creato dopo l'import dello schema con lo script:

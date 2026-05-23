@@ -87,8 +87,15 @@
 <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
     <h2 class="h5 mb-0">Calendario</h2>
     {% if celleEditabili %}
-        <a href="{{ url('/piani-turno/' ~ piano.id ~ '/aggiungi-operatore') }}"
-           class="btn btn-sm btn-outline-primary">+ Aggiungi operatore</a>
+        <div class="d-flex gap-2 flex-wrap">
+            <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/genera') }}" class="d-inline"
+                  onsubmit="return confirm('Popolare la bozza continuando dal mese precedente pubblicato?\n\nI turni e i giorni di assenza già presenti non vengono toccati. Gli operatori non continuabili verranno elencati come «da assegnare a mano».');">
+                {{ csrf_field() }}
+                <button type="submit" class="btn btn-sm btn-primary">&#x21bb; Continua dal mese precedente</button>
+            </form>
+            <a href="{{ url('/piani-turno/' ~ piano.id ~ '/aggiungi-operatore') }}"
+               class="btn btn-sm btn-outline-primary">+ Aggiungi operatore</a>
+        </div>
     {% endif %}
 </div>
 {% if not celleEditabili and puoModificare %}

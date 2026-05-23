@@ -115,6 +115,7 @@ return function (Router $r): void {
     $r->post('/piani-turno/{id}/publish',    [PianiTurnoController::class, 'publish'],   $adminCaposala, name: 'piani-turno.publish');
     $r->post('/piani-turno/{id}/unpublish',  [PianiTurnoController::class, 'unpublish'], $adminCaposala, name: 'piani-turno.unpublish');
     $r->post('/piani-turno/{id}/archive',    [PianiTurnoController::class, 'archive'],   $adminCaposala, name: 'piani-turno.archive');
+    $r->post('/piani-turno/{id}/genera',     [PianiTurnoController::class, 'genera'],    $adminCaposala, name: 'piani-turno.genera');
 
     // -------------------------------------------------------------------------
     // Turni nel calendario di un piano (sessione 4)

@@ -12,6 +12,7 @@ final class TurnoModel extends BaseModel
         'id_operatore',
         'data',
         'id_tipo_turno',
+        'ore_effettive',
         'note',
     ];
 
@@ -125,6 +126,7 @@ final class TurnoModel extends BaseModel
         $ultimo = (new \DateTimeImmutable($primo))->format('Y-m-t');
 
         $sql = "SELECT t.data,
+                       t.ore_effettive,
                        tt.ore_conteggiate,
                        tt.is_riposo,
                        tt.is_ferie,
@@ -140,5 +142,34 @@ final class TurnoModel extends BaseModel
             'primo'  => $primo,
             'ultimo' => $ultimo,
         ]);
+    }
+
+    /**
+     * Date già occupate da un turno per gli operatori indicati nel mese, su
+     * QUALSIASI piano (l'UNIQUE (operatore, data) è globale). Il generatore le
+     * salta per non violare l'unique né sovrascrivere turni esistenti.
+     *
+     * @param list<int> $idOperatori
+     * @return array<int, list<string>> id_operatore => date Y-m-d occupate
+     */
+    public function dateOccupateInMese(array $idOperatori, int $anno, int $mese): array
+    {
+        if ($idOperatori === []) {
+            return [];
+        }
+        $primo = sprintf('%04d-%02d-01', $anno, $mese);
+        $ultimo = (new \DateTimeImmutable($primo))->format('Y-m-t');
+        $in = implode(',', array_fill(0, count($idOperatori), '?'));
+        $sql = "SELECT id_operatore, data FROM turni
+                WHERE id_operatore IN ({$in}) AND data BETWEEN ? AND ?";
+        $params = array_merge(
+            array_map(static fn ($id) => (int) $id, $idOperatori),
+            [$primo, $ultimo],
+        );
+        $map = [];
+        foreach ($this->db->query($sql, $params) as $r) {
+            $map[(int) $r['id_operatore']][] = (string) $r['data'];
+        }
+        return $map;
     }
 }

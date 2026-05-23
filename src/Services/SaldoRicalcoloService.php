@@ -70,7 +70,11 @@ final class SaldoRicalcoloService
         $oreFormazione = 0.0;
 
         foreach ($this->turni->listByOperatoreInMese($idOperatore, $anno, $mese) as $t) {
-            $ore = (float) $t['ore_conteggiate'];
+            // Opzione B (sessione 6): le ore effettive del turno vincono sul
+            // default del tipo turno. NULL (turni pre-6 o manuali) => fallback.
+            $ore = $t['ore_effettive'] !== null
+                ? (float) $t['ore_effettive']
+                : (float) $t['ore_conteggiate'];
             if ((int) $t['is_riposo'] === 1) {
                 continue;
             }
