@@ -11,6 +11,7 @@ use App\Controllers\SaldiController;
 use App\Controllers\TipiTurnoController;
 use App\Controllers\TurniController;
 use App\Controllers\UtentiController;
+use App\Controllers\VincoliController;
 use App\Routing\Router;
 
 /**
@@ -153,4 +154,19 @@ return function (Router $r): void {
     $r->get('/assenze/{id}/edit',    [AssenzeController::class, 'edit'],    $adminCaposala, name: 'assenze.edit');
     $r->post('/assenze/{id}',        [AssenzeController::class, 'update'],  $adminCaposala, name: 'assenze.update');
     $r->post('/assenze/{id}/delete', [AssenzeController::class, 'destroy'], $adminCaposala, name: 'assenze.destroy');
+
+    // -------------------------------------------------------------------------
+    // Vincoli operatori (sessione 5-bis)
+    //
+    // CRUD `operatori_vincoli` (no_notti / no_weekend / solo_mattine). Scrittura
+    // e lettura admin+caposala. I vincoli NON sono bloccanti runtime: sono
+    // input del generatore (sessione 6) e warning informativo nel form turno.
+    // Vedi memoria `project-vincoli-operatori`.
+    // -------------------------------------------------------------------------
+    $r->get('/vincoli',              [VincoliController::class, 'index'],   $adminCaposala, name: 'vincoli.index');
+    $r->get('/vincoli/create',       [VincoliController::class, 'create'],  $adminCaposala, name: 'vincoli.create');
+    $r->post('/vincoli',             [VincoliController::class, 'store'],   $adminCaposala, name: 'vincoli.store');
+    $r->get('/vincoli/{id}/edit',    [VincoliController::class, 'edit'],    $adminCaposala, name: 'vincoli.edit');
+    $r->post('/vincoli/{id}',        [VincoliController::class, 'update'],  $adminCaposala, name: 'vincoli.update');
+    $r->post('/vincoli/{id}/delete', [VincoliController::class, 'destroy'], $adminCaposala, name: 'vincoli.destroy');
 };

@@ -1,0 +1,109 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}{{ titolo }} &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">{{ titolo }}</h1>
+            <a href="{{ url('/vincoli') }}" class="btn btn-outline-secondary">Annulla</a>
+        </div>
+
+        {# Checkbox 'attivo': default checked per nuovi vincoli; in edit usa il valore
+           del record. Se la validazione fallisce e ricaricheremo il form, l'old_input
+           contiene 'attivo' solo se la checkbox era spuntata (le checkbox non
+           spuntate non arrivano nel POST). Pattern allineato a operatori/form.twig. #}
+        {% set attivo_default = (old_input is iterable and old_input.attivo is defined)
+            ? old_input.attivo in ['1','on','true']
+            : (vincolo.attivo ?? 1) %}
+
+        <form method="post" action="{{ url(action) }}" novalidate>
+            {{ csrf_field() }}
+
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <label for="id_operatore" class="form-label">Operatore <span class="text-danger">*</span></label>
+                    <select id="id_operatore" name="id_operatore"
+                            class="form-select{% if form_errors.id_operatore %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% set sel_op = old_input.id_operatore ?? vincolo.id_operatore ?? null %}
+                        {% for o in operatori %}
+                            <option value="{{ o.id }}" {% if sel_op == o.id %}selected{% endif %}>
+                                {{ o.cognome }} {{ o.nome }} — {{ o.categoria_nome }} ({{ o.setting_nome }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.id_operatore %}
+                        <div class="invalid-feedback">{{ form_errors.id_operatore|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-5">
+                    <label for="tipo_vincolo" class="form-label">Tipo di vincolo <span class="text-danger">*</span></label>
+                    <select id="tipo_vincolo" name="tipo_vincolo"
+                            class="form-select{% if form_errors.tipo_vincolo %} is-invalid{% endif %}" required>
+                        <option value="">— Seleziona —</option>
+                        {% set sel_t = old_input.tipo_vincolo ?? vincolo.tipo_vincolo ?? null %}
+                        {% for codice, etichetta in tipiVincolo %}
+                            <option value="{{ codice }}" {% if sel_t == codice %}selected{% endif %}>
+                                {{ etichetta }} ({{ codice }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                    {% if form_errors.tipo_vincolo %}
+                        <div class="invalid-feedback">{{ form_errors.tipo_vincolo|first }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-6">
+                    <label for="data_inizio" class="form-label">Dal</label>
+                    <input type="date" id="data_inizio" name="data_inizio"
+                           class="form-control{% if form_errors.data_inizio %} is-invalid{% endif %}"
+                           value="{{ old_input.data_inizio ?? vincolo.data_inizio ?? '' }}">
+                    {% if form_errors.data_inizio %}
+                        <div class="invalid-feedback">{{ form_errors.data_inizio|first }}</div>
+                    {% endif %}
+                    <div class="form-text">Lascia vuoto per un vincolo permanente.</div>
+                </div>
+
+                <div class="col-md-6">
+                    <label for="data_fine" class="form-label">Al</label>
+                    <input type="date" id="data_fine" name="data_fine"
+                           class="form-control{% if form_errors.data_fine %} is-invalid{% endif %}"
+                           value="{{ old_input.data_fine ?? vincolo.data_fine ?? '' }}">
+                    {% if form_errors.data_fine %}
+                        <div class="invalid-feedback">{{ form_errors.data_fine|first }}</div>
+                    {% endif %}
+                    <div class="form-text">Lascia vuoto se non c'è una scadenza.</div>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="attivo" name="attivo" value="1"
+                               {% if attivo_default %}checked{% endif %}>
+                        <label class="form-check-label" for="attivo">
+                            Vincolo attivo (letto dal form turno e — in futuro — dal generatore)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <label for="note" class="form-label">Note</label>
+                    <textarea id="note" name="note" rows="3" maxlength="1000"
+                              class="form-control{% if form_errors.note %} is-invalid{% endif %}"
+                              placeholder="Motivazione, accordi, riferimenti…">{{ old_input.note ?? vincolo.note ?? '' }}</textarea>
+                    {% if form_errors.note %}
+                        <div class="invalid-feedback">{{ form_errors.note|first }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url('/vincoli') }}" class="btn btn-outline-secondary">Annulla</a>
+                <button type="submit" class="btn btn-primary">Salva</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

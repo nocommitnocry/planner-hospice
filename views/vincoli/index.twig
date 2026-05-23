@@ -1,0 +1,72 @@
+{% extends 'layout/base.twig' %}
+
+{% block title %}Vincoli operatori &middot; {{ app.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Vincoli operatori</h1>
+    <a href="{{ url('/vincoli/create') }}" class="btn btn-primary">+ Nuovo vincolo</a>
+</div>
+
+<p class="text-muted small">
+    Vincoli di pianificazione (es. no notti, no weekend, solo mattine).
+    <strong>Non bloccanti runtime</strong>: sono parametri del generatore automatico
+    e warning informativo nel form turno. La coordinatrice può sempre derogarli
+    in caso di accordo o carenza di personale.
+</p>
+
+{% if vincoli|length == 0 %}
+    <div class="alert alert-info">Nessun vincolo registrato.</div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Operatore</th>
+                    <th>Setting</th>
+                    <th>Tipo</th>
+                    <th>Attivo</th>
+                    <th>Dal</th>
+                    <th>Al</th>
+                    <th>Note</th>
+                    <th>Inserito da</th>
+                    <th style="width:13rem" class="text-end">Azioni</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in vincoli %}
+                    <tr>
+                        <td><strong>{{ v.operatore_cognome }}</strong> {{ v.operatore_nome }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ v.setting_nome }}</span></td>
+                        <td>
+                            <span class="badge bg-secondary">{{ v.tipo_vincolo }}</span>
+                            <span class="text-muted small">{{ tipiVincolo[v.tipo_vincolo]|default(v.tipo_vincolo) }}</span>
+                        </td>
+                        <td>
+                            {% if v.attivo %}
+                                <span class="badge bg-success">Sì</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Disattivato</span>
+                            {% endif %}
+                        </td>
+                        <td class="small">{{ v.data_inizio|default('—') }}</td>
+                        <td class="small">{{ v.data_fine|default('—') }}</td>
+                        <td class="small text-muted">{{ v.note|default('—') }}</td>
+                        <td class="small text-muted">{{ v.creato_da_username|default('—') }}</td>
+                        <td class="text-end">
+                            <a href="{{ url('/vincoli/' ~ v.id ~ '/edit') }}"
+                               class="btn btn-sm btn-outline-secondary">Modifica</a>
+                            <form method="post" action="{{ url('/vincoli/' ~ v.id ~ '/delete') }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Eliminare il vincolo {{ v.tipo_vincolo }} di {{ v.operatore_cognome }} {{ v.operatore_nome }}?');">
+                                {{ csrf_field() }}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

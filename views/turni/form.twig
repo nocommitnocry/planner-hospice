@@ -72,22 +72,31 @@
             {% endif %}
         {% endif %}
 
+        {# Sessione 5-bis: warning vincoli leggibile (frase parlata invece di
+           <code>no_notti</code>). Mappa di traduzione inline: il set e' chiuso
+           e piccolo (3 codici). Se in futuro cresce, spostarla in un helper
+           Twig globale o nel BaseController::commonViewData. #}
         {% if vincoli|length > 0 %}
             <div class="alert alert-warning small">
-                <strong>Vincoli attivi per questo operatore:</strong>
+                <strong>L'operatore ha {{ vincoli|length > 1 ? 'vincoli attivi' : 'un vincolo attivo' }}:</strong>
                 <ul class="mb-0">
                     {% for v in vincoli %}
                         <li>
-                            <code>{{ v.tipo_vincolo }}</code>
+                            {{ {
+                                'no_notti':     'Non dovrebbe fare turni notturni',
+                                'no_weekend':   'Non dovrebbe lavorare nei weekend (sabato/domenica)',
+                                'solo_mattine': 'Preferenza forte per turni del mattino',
+                            }[v.tipo_vincolo]|default('Vincolo: ' ~ v.tipo_vincolo) }}
                             {% if v.data_inizio or v.data_fine %}
-                                ({{ v.data_inizio ? format_date(v.data_inizio) : '…' }} —
-                                 {{ v.data_fine ? format_date(v.data_fine) : '…' }})
+                                ({{ v.data_inizio ? 'dal ' ~ format_date(v.data_inizio) : 'da sempre' }}{{ v.data_fine ? ' al ' ~ format_date(v.data_fine) : ', senza fine' }})
                             {% endif %}
                             {% if v.note %} — <span class="text-muted">{{ v.note }}</span>{% endif %}
                         </li>
                     {% endfor %}
                 </ul>
-                <div class="text-muted mt-1">Verifica manualmente la compatibilità con il tipo turno scelto.</div>
+                <div class="text-muted mt-1">
+                    Non bloccante: procedi solo se esiste un accordo per copertura.
+                </div>
             </div>
         {% endif %}
 

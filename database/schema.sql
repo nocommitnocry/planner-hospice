@@ -126,14 +126,17 @@ CREATE TABLE IF NOT EXISTS operatori (
 CREATE TABLE IF NOT EXISTS operatori_vincoli (
     id INT AUTO_INCREMENT PRIMARY KEY,
     id_operatore INT NOT NULL,
-    tipo_vincolo VARCHAR(50) NOT NULL COMMENT 'es. no_notti, no_weekend, solo_mattina',
+    tipo_vincolo VARCHAR(50) NOT NULL COMMENT 'no_notti | no_weekend | solo_mattine — set chiuso lato applicativo',
     attivo BOOLEAN NOT NULL DEFAULT TRUE,
     data_inizio DATE NULL,
     data_fine DATE NULL,
     note TEXT,
     creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    creato_da INT NULL,
     CONSTRAINT fk_vincoli_operatore FOREIGN KEY (id_operatore)
         REFERENCES operatori(id) ON DELETE CASCADE,
+    CONSTRAINT fk_vincoli_creato_da FOREIGN KEY (creato_da)
+        REFERENCES utenti(id) ON DELETE SET NULL,
     INDEX idx_vincoli_operatore (id_operatore, attivo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

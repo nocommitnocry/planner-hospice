@@ -744,3 +744,61 @@ Il form `/tipi-turno/edit` continua a esporre `is_ferie`/`is_permesso`/`is_malat
 Aggiungere il CRUD per i vincoli operatori (pattern `AssenzeController`), con `<select>` chiuso dei tre codici riconosciuti (`no_notti`, `no_weekend`, `solo_mattine`) al posto della stringa libera attuale. Sostituire l'alert `<code>no_notti</code>` + "Verifica manualmente" nel form turno con frase leggibile ("L'operatrice non dovrebbe fare turni notturni — accordo per carenza personale?"), non bloccante. Da decidere all'apertura: posizione UI (top-level `/vincoli` come `/assenze` o nidificato `/operatori/{id}/vincoli`), eventuale flash post-`AssenzeController::store` se l'assenza appena creata copre turni esistenti (numero + link al piano). Vedi memoria `project-vincoli-operatori`.
 
 **Poi:** 6 (generatore automatico schema M-M-P-N-S-R con continuazione dal mese precedente). Vedi [[project-automazioni-popolamento]].
+
+---
+
+## Sessione 5-bis — 2026-05-23 — CRUD `operatori_vincoli` + warning leggibile
+
+### Decisioni risolte prima dell'apertura
+
+- **Posizione UI**: top-level `/vincoli` come `/assenze` (non nidificato sotto `/operatori/{id}/vincoli`). Motivo: la lista è già piccola, il pattern `AssenzeController` con colonna "Operatore" è rodato e copre la gestione massiva. Replicare quel pattern minimizza il lavoro per liberare tempo alla 6 (demo 28 maggio).
+- **Migration `0005_operatori_vincoli_creato_da.sql`**: sì, aggiungere `creato_da INT NULL FK utenti(id) ON DELETE SET NULL` per coerenza col pattern `assenze.creato_da` (4-sexies).
+- **`solo_mattine`** (plurale): aggiornato il commento `solo_mattina` (singolare) nello schema iniziale per allinearlo a memoria e UX.
+- **Warning mirato `no_notti` × `is_notte=1`** nel form turno: rinviato a 6 (lo gestirà il generatore). Qui solo la frase parlata generica.
+- **Flash post-store in `AssenzeController`** (punto aperto della spec-5): rinviato. Il bordo rosso sul piano è già sufficiente.
+
+### Cosa è stato fatto
+
+- **Migrazione `0005_operatori_vincoli_creato_da.sql`** — aggiunge `creato_da INT NULL AFTER creato_il` con FK verso `utenti(id) ON DELETE SET NULL`. `schema.sql` aggiornato per nuovi install + commento `tipo_vincolo` ora riporta `no_notti | no_weekend | solo_mattine — set chiuso lato applicativo`.
+- **`VincoloOperatoreModel`** (nuovo): fillable + `listJoined(idSetting?, idOperatore?)`. JOIN operatori + setting (per cognome/nome/setting_codice/setting_nome) + LEFT JOIN utenti (`creato_da_username`). Ordinamento `o.cognome, o.nome, v.tipo_vincolo`. Niente metodo `findAttiviPerOperatoreData`: `TurniController::vincoliAttiviPerOperatore` resta invariato (privato, usa SQL inline con due placeholder distinti per data).
+- **`VincoloValidator`** (nuovo): costante pubblica `TIPI = ['no_notti'=>'Niente notti', 'no_weekend'=>'Niente weekend', 'solo_mattine'=>'Solo mattine']` (riusata dal controller per il dropdown e dal validator per `Rules::inSet`). Date opzionali (NULL = "sempre"), coerenza `data_fine >= data_inizio` lessicografica su Y-m-d. Checkbox `attivo` via `Rules::toBool($input['attivo'] ?? false) ? 1 : 0` come `OperatoreValidator`. Note opzionali max 1000.
+- **`VincoliController`** (nuovo, admin+caposala): CRUD `index/create/store/edit/update/destroy` copia di `AssenzeController`. `verificaRiferimenti` controlla solo l'operatore (il tipo è già nel set chiuso applicativo). `creato_da` valorizzato in `store`, intoccato in `update` (resta autore originale). Niente filtro setting nella lista (lista piccola); setting visibile come colonna. Log su create/update/destroy.
+- **Routing** (`config/routes.php`): 6 rotte sotto `/vincoli` (gruppo `$adminCaposala`) dopo il blocco `/assenze`. Pattern identico (index/create/store/edit/update/destroy).
+- **Viste**:
+  - `views/vincoli/index.twig`: tabella Operatore | Setting | Tipo (badge codice + etichetta leggibile) | Attivo (badge sì/disattivato) | Dal | Al | Note | Inserito da | Azioni. Niente pills di filtro setting.
+  - `views/vincoli/form.twig`: select operatore (cognome+nome+categoria+setting), `<select>` chiuso dei 3 codici con label leggibile + codice tra parentesi, date opzionali con form-text "Lascia vuoto per un vincolo permanente", checkbox `attivo` con default `checked` per i nuovi vincoli (pattern `attivo_default` copiato da `operatori/form.twig` per coerenza), textarea note.
+- **Navbar** (`views/layout/navbar.twig`): voce "Vincoli" tra "Assenze" e il dropdown "Anagrafiche", visibile a admin/caposala.
+- **`views/turni/form.twig`** — riscritto il blocco `{% if vincoli|length > 0 %}` (righe 75-92): la mappa `codice => frase parlata` è inline in Twig come `{ 'no_notti': 'Non dovrebbe fare turni notturni', 'no_weekend': 'Non dovrebbe lavorare nei weekend (sabato/domenica)', 'solo_mattine': 'Preferenza forte per turni del mattino' }`. Periodi resi come "dal dd/mm/yyyy al dd/mm/yyyy" o "da sempre, senza fine". Footer "Non bloccante: procedi solo se esiste un accordo per copertura." Niente più `<code>no_notti</code>`.
+- **Dashboard** (`views/dashboard/index.twig`): banner aggiornato a sessione 5-bis (ricorda che i vincoli restano non bloccanti) + tile «Vincoli» accanto a «Assenze».
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Posizione UI | Top-level `/vincoli` come `/assenze`. Pattern `AssenzeController` riusato per minimizzare codice nuovo |
+| Set chiuso dei codici | `no_notti`, `no_weekend`, `solo_mattine` come `<select>` nel form. `VincoloValidator::TIPI` (costante pubblica) è la fonte di verità: codici → etichette. Riusata da controller (dropdown + lista) e validator (`Rules::inSet`). Il campo `tipo_vincolo` resta VARCHAR(50) nel DB per future estensioni (`no_festivi` ecc.): basta aggiungere un'entry alla costante, niente migration |
+| Mappa frase parlata | Inline in Twig in `views/turni/form.twig` (set chiuso e piccolo). Se in futuro cresce, spostarla in un helper Twig globale |
+| Bloccante vs informativo | **Informativo**. Niente check in `TurniController::validateRiferimenti`. Motivo: input del generatore (sessione 6), derogabile dalla coordinatrice. Vedi [[project-vincoli-operatori]] |
+| Filtro setting nella lista | **No** per la prima versione. Lista piccola, setting visibile come colonna |
+| Toggle "attivo" | Gestito dal form di edit (checkbox), senza endpoint `toggle-attivo` dedicato. Default `attivo=true` per i nuovi vincoli (UI). Pattern `attivo_default` allineato a `operatori/form.twig` |
+| Periodi NULL | `data_inizio` e `data_fine` opzionali. NULL = "sempre". Validator: se entrambe presenti, `data_fine >= data_inizio` |
+| Migration `creato_da` | Sì: coerenza col pattern `assenze` (4-sexies). FK `ON DELETE SET NULL` |
+| `verificaRiferimenti` | Solo controllo esistenza operatore. Il `tipo_vincolo` è già in set chiuso applicativo, niente tabella di riferimento da consultare |
+| Warning mirato no_notti × is_notte=1 | Rinviato a 6 (gestito dal generatore). Qui solo frase parlata generica |
+
+### Da fare prima della prossima sessione (lato utente)
+
+Già eseguito durante questa sessione (test 1-10 OK):
+1. Backup DB pre-0005.
+2. `mysql -u hospice_user -p hospice_turni < database/migrations/0005_operatori_vincoli_creato_da.sql`.
+3. `composer dump-autoload`.
+4. Riavvio server, test 1-10 della spec — tutti verdi (Olga, 2026-05-23).
+
+### Prossima sessione (6) — Generatore automatico
+
+Schema ciclico fisso M-M-P-N-S-R con continuazione dal piano del mese precedente pubblicato. Il generatore consuma `operatori_vincoli` come constraint sulla proposta (genera mattine per `solo_mattine`, evita date di weekend per `no_weekend`, evita tipi `is_notte=1` per `no_notti`). La coordinatrice modifica liberamente la bozza generata: mai bloccante. Vedi [[project-automazioni-popolamento]] per i due automatismi richiesti dal vecchio gestionale e [[project-deadline-28maggio]] per la demo competitiva.
+
+Punti aperti già identificati per la 6:
+- Rivisitazione `/tipi-turno` con radio Lavoro/Assenza top-level (rinviata dalla 5): tocca il calcolo ore in `SaldoRicalcoloService` e gli schemi di conteggio della 6 stessa.
+- Maternità retroattiva intero-mese che copre piano già esistente (rinviata dalla 4-sexies): valutare automazione con `rimuoviSaldoSeOrfano` quando zero turni.
+- Warning mirato `no_notti × is_notte=1` nel form turno (rinviato dalla 5-bis): valutare se gestirlo nel generatore o come hint nel form.

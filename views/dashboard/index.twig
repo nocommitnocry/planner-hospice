@@ -6,13 +6,13 @@
 <h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
 
 <div class="alert alert-info">
-    <strong>Sessione 5 completata.</strong> Le assenze programmate vincono sempre
-    sui nuovi turni: un'assegnazione in un giorno coperto da un'assenza dell'operatore
-    viene rifiutata con messaggio user-friendly. I turni esistenti che si trovano sovrapposti
-    a un'assenza creata dopo restano modificabili/eliminabili (cleanup retroattivo): sono
-    evidenziati con bordo rosso nel calendario e con alert nel form. Le celle vuote in
-    periodo di assenza diventano overlay non cliccabili con il codice del tipo assenza.
-    Prossime sessioni: 5-bis (CRUD vincoli operatori), 6 (generatore automatico).
+    <strong>Sessione 5-bis completata.</strong> CRUD vincoli operatori
+    (<code>no_notti</code>, <code>no_weekend</code>, <code>solo_mattine</code>) con
+    set chiuso e tracciabilità dell'autore. Il warning nel form turno è ora una
+    frase parlata leggibile invece del codice tecnico. I vincoli restano <em>non
+    bloccanti runtime</em>: sono input del generatore automatico e suggerimenti
+    per la coordinatrice, derogabili in caso di accordo o carenza di personale.
+    Prossima sessione: 6 (generatore automatico).
 </div>
 
 <div class="row g-3">
@@ -39,6 +39,14 @@
                 <div class="card-body">
                     <h5 class="card-title">Assenze</h5>
                     <p class="text-muted small mb-0">Ferie, permessi, malattia, maternità.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="{{ url('/vincoli') }}" class="card h-100 text-decoration-none">
+                <div class="card-body">
+                    <h5 class="card-title">Vincoli</h5>
+                    <p class="text-muted small mb-0">No notti, no weekend, solo mattine — non bloccanti.</p>
                 </div>
             </a>
         </div>
