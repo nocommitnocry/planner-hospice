@@ -155,6 +155,38 @@ final class AssenzaModel extends BaseModel
     }
 
     /**
+     * Assenze di un operatore che si sovrappongono a un mese, con i flag del
+     * tipo turno necessari al conteggio ore nel saldo (SchemaOreService):
+     * categoria (is_ferie/permesso/malattia/formazione), esclude_pianificazione
+     * e `schema_ore`. `data_inizio`/`data_fine` sono quelle PIENE del record
+     * (anche fuori dal mese): servono per il restart-da-M del blocco ciclico.
+     *
+     * @return list<array{
+     *   id:int, data_inizio:string, data_fine:string, tipo_codice:string,
+     *   is_ferie:int, is_permesso:int, is_malattia:int, is_formazione:int,
+     *   esclude_pianificazione:int, schema_ore:string, ore_conteggiate:string
+     * }>
+     */
+    public function listConTipoPerOperatoreMese(int $idOperatore, int $anno, int $mese): array
+    {
+        $primo  = sprintf('%04d-%02d-01', $anno, $mese);
+        $ultimo = (new \DateTimeImmutable($primo))->modify('last day of this month')->format('Y-m-d');
+        return $this->db->query(
+            "SELECT a.id, a.data_inizio, a.data_fine,
+                    t.codice AS tipo_codice,
+                    t.is_ferie, t.is_permesso, t.is_malattia, t.is_formazione,
+                    t.esclude_pianificazione, t.schema_ore, t.ore_conteggiate
+             FROM assenze a
+             JOIN tipi_turno t ON t.id = a.id_tipo_turno
+             WHERE a.id_operatore = :id_op
+               AND a.data_inizio <= :ultimo
+               AND a.data_fine   >= :primo
+             ORDER BY a.data_inizio",
+            ['id_op' => $idOperatore, 'ultimo' => $ultimo, 'primo' => $primo],
+        );
+    }
+
+    /**
      * Operatori che hanno almeno un'assenza di tipo `esclude_pianificazione=1`
      * che copre INTERAMENTE il mese (data_inizio <= primo_del_mese
      * AND data_fine >= ultimo_del_mese). Ritorna gli id_operatore distinti.

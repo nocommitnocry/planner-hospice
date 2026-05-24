@@ -53,6 +53,28 @@ final class OperatoreModel extends BaseModel
     }
 
     /**
+     * Un singolo operatore con il nome della categoria e il codice/nome del
+     * setting "di casa" già joinati. Serve a chi deve risolvere lo schema di
+     * turnazione (es. SchemaOreService) senza fare la join a mano.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findConSettingCategoria(int $id): ?array
+    {
+        return $this->db->queryOne(
+            "SELECT o.*,
+                    c.nome AS categoria_nome,
+                    s.codice AS setting_codice,
+                    s.nome   AS setting_nome
+             FROM operatori o
+             JOIN categorie_operatori c ON c.id = o.id_categoria
+             JOIN setting s             ON s.id = o.id_setting
+             WHERE o.id = :id",
+            ['id' => $id],
+        );
+    }
+
+    /**
      * Operatori "in servizio" in un mese: attivi, assunti entro l'ultimo del
      * mese (o senza data_assunzione), non cessati prima del primo del mese
      * (o senza data_cessazione). Se $idSetting è valorizzato, filtra il

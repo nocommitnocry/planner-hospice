@@ -3,8 +3,13 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\AssenzaModel;
+use App\Models\OperatoreModel;
 use App\Models\SaldoOreModel;
+use App\Models\SchemaPassoModel;
+use App\Models\SchemaTurnazioneModel;
 use App\Models\TurnoModel;
+use App\Models\VincoloOperatoreModel;
 
 /**
  * Ricalcolo del saldo ore di un operatore per un mese, con propagazione del
@@ -39,10 +44,22 @@ final class SaldoRicalcoloService
 {
     private const MAX_PROPAGAZIONE_MESI = 24;
 
+    private readonly SchemaOreService $schemaOre;
+
     public function __construct(
         private readonly SaldoOreModel $saldi,
         private readonly TurnoModel $turni,
+        ?SchemaOreService $schemaOre = null,
     ) {
+        // Costruito internamente per non toccare i siti di `new SaldoRicalcoloService`
+        // (i Model prendono il DB dal Container). Iniettabile per i test.
+        $this->schemaOre = $schemaOre ?? new SchemaOreService(
+            new AssenzaModel(),
+            new OperatoreModel(),
+            new VincoloOperatoreModel(),
+            new SchemaTurnazioneModel(),
+            new SchemaPassoModel(),
+        );
     }
 
     /**
@@ -69,7 +86,9 @@ final class SaldoRicalcoloService
         $oreMalattia = 0.0;
         $oreFormazione = 0.0;
 
+        $dateConTurno = [];
         foreach ($this->turni->listByOperatoreInMese($idOperatore, $anno, $mese) as $t) {
+            $dateConTurno[] = (string) $t['data']; // giorni coperti: l'assenza non li riconta
             // Opzione B (sessione 6): le ore effettive del turno vincono sul
             // default del tipo turno. NULL (turni pre-6 o manuali) => fallback.
             $ore = $t['ore_effettive'] !== null
@@ -90,6 +109,17 @@ final class SaldoRicalcoloService
                 $oreLavorate += $ore;
             }
         }
+
+        // Ore delle ASSENZE (sessione 6): non sono turni, vivono in `assenze`.
+        // SchemaOreService le conta "quanto la posizione di schema" e le divide
+        // per bucket. I giorni già coperti da un turno vengono saltati.
+        // NB: il bucket `maternita` (MAT/ASP) non è ancora agganciato al saldo
+        // — manca la colonna dedicata (revisione 4-sexies).
+        $assenzeOre = $this->schemaOre->oreAssenzePerMese($idOperatore, $anno, $mese, $dateConTurno);
+        $oreFerie      += $assenzeOre['ferie'];
+        $orePermessi   += $assenzeOre['permessi'];
+        $oreMalattia   += $assenzeOre['malattia'];
+        $oreFormazione += $assenzeOre['formazione'];
 
         $oreDovute = (float) $saldo['ore_dovute'];
         $saldoMese = ($oreLavorate + $oreFerie + $orePermessi + $oreMalattia + $oreFormazione) - $oreDovute;

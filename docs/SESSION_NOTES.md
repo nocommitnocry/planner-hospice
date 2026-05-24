@@ -802,3 +802,77 @@ Punti aperti già identificati per la 6:
 - Rivisitazione `/tipi-turno` con radio Lavoro/Assenza top-level (rinviata dalla 5): tocca il calcolo ore in `SaldoRicalcoloService` e gli schemi di conteggio della 6 stessa.
 - Maternità retroattiva intero-mese che copre piano già esistente (rinviata dalla 4-sexies): valutare automazione con `rimuoviSaldoSeOrfano` quando zero turni.
 - Warning mirato `no_notti × is_notte=1` nel form turno (rinviato dalla 5-bis): valutare se gestirlo nel generatore o come hint nel form.
+
+---
+
+## Sessione 6 — 2026-05-23 (build) + 2026-05-24 (verifica) — Generatore automatico + schemi di turnazione
+
+> Questa sezione è stata scritta il 2026-05-24 consolidando la chat di build del 23/05 (sessione `e810f801`, commit `6b19bab`) — che non aveva lasciato voce nel diario — più la verifica del 24/05. Fonte autorevole dei requisiti: `spec-sessione-6.md` (l'xlsx `spec ore e turni sessione 6.xlsx` è il materiale grezzo, ormai superato dalla spec).
+
+### Decisioni risolte il 2026-05-23 (chat di build)
+
+| Punto | Scelta |
+|---|---|
+| **Modello dominio** | NON un ciclo unico, ma **due famiglie di schema** come *dati* (no `if` hardcoded): **ciclico** (periodo 6, posizione-based → Hospice inf/OSS) e **settimanale** (periodo 7, giorno-settimana → coordinatrice Hospice + tutto UCP-DOM). Tabelle `schemi_turnazione` + `schema_passi` |
+| **Dove vivono le ore lavorate** | **Opzione B**: `turni.ore_effettive` (DECIMAL NULL). Il generatore/inserimento salva le ore del turno specifico; `SaldoRicalcoloService` somma quel campo con fallback su `tipo.ore_conteggiate` per i turni pre-6/manuali |
+| **Notte** | **Soluzione 2**: "la notte è un intervallo, le ore seguono il calendario". Rappresentazione in griglia N (+ S di smonto a 0h). *(Lo split delle ore di N tra i mesi NON è ancora implementato nel service — vedi gap.)* |
+| **Vestizione** | +0,25h (15 min) su **M, P, N, G**, **solo se lavorato** (non in assenza). Introdotta quest'anno → applicata nel seed (M 7,75 · P 8,00 · N 10,75 · G 7,75). **Da confermare alla coordinatrice in demo**: niente controllo separato in UI, è automatica. Olga: "facciamo così e lo chiedo durante la demo" |
+| **Generatore: ferie/assenze** | **Congela** il ciclo (non avanza la posizione), riprende dopo l'assenza — identico al modificatore `no_weekend`. Risposta di Olga del 23/05: *"Si congela, giusto — eureca!"*. ⚠️ **Questa decisione riguarda SOLO il comportamento del GENERATORE** (quale turno assegnare al rientro), **non** la regola di conteggio ore nel saldo (vedi nodo aperto) |
+| **Refusi xlsx corretti** | OSS UCP-DOM 08:00–**15:15** (= 7,25h, non 14:15) · Coordinatrice `G` 08:00–**15:30** · `D` Hospice 07:00–**14:30** (manuale, no vestizione) |
+| **Catalogo tipi turno** | Confermati e seedati i nuovi: `UI`/`UO` (UCP), `Rec` (recupero weekend), `MS`/`PS`/`NS` (straordinari Hospice, solo manuali), `L` (lutto), `CM` (congedo matrimoniale), `CP` (congedo paternità), `104`, `INF` (infortunio), `ASP` (aspettativa), `PST` (permesso studio), `DS` (donazione sangue), `EL` (permesso elettorale/scrutatori). 28 tipi totali |
+| **Conteggio per-tipo** | Colonna `tipi_turno.schema_ore` ∈ `{da_schema, maternita_8_6_0, zero}`. Default `da_schema` (regola unica "quanto la posizione di schema"); MAT → `maternita_8_6_0`; ASP → `zero` |
+| **4-sexies rivista** (decisa, NON ancora implementata) | maternità/aspettativa intero mese → **nascosto dalla griglia ma riga saldo preservata** (maternità ≈ neutro 8/6/0, aspettativa = `-ore_dovute` deficit visibile) |
+
+### Cosa è stato costruito e committato (`6b19bab`, 23/05 22:09)
+
+- **Migration `0006`** — tabelle `schemi_turnazione` + `schema_passi`; `turni.ore_effettive`; `tipi_turno.schema_ore`; 15 tipi turno nuovi; fix orari D/G; vestizione su M/P/N/G; seed dei **6 schemi concreti** (`hospice_regolare`/`_solo_mattine`/`_no_notti`/`_coordinatrice`, `ucpdom_infermieri`/`_oss`). `schema.sql` allineato.
+- **Model** `SchemaTurnazioneModel`, `SchemaPassoModel`; `TipoTurnoModel` esteso (`schema_ore`).
+- **`GeneratoreService`** — **Automatismo 2** (continuazione dal mese precedente pubblicato): risolve lo schema da setting+categoria+vincoli, ricostruisce la posizione dall'ultimo turno regolare del mese prima, congela su assenze/weekend, lista "da assegnare a mano" per i casi limite. Guardia sull'`UNIQUE (operatore, data)` globale (salta date già occupate cross-setting). Da chiamare DENTRO la transazione del controller.
+- **`SaldoRicalcoloService`** → somma `ore_effettive` (Opzione B), fallback `ore_conteggiate`.
+- **UI** — bottone "Continua dal mese precedente" nella `show` del piano in bozza (`PianiTurnoController::genera`, admin+caposala, in transazione).
+
+### Verifica del 2026-05-24 (statica su dati reali + scenari in transazione con rollback)
+
+Catena reale Hospice presente: maggio (seed manuale, pubbl.) → giugno (generato, pubbl.) → luglio (generato, pubbl.). Verificati anche i percorsi non coperti dai dati reali con uno script di scenario non distruttivo (transazione + rollback).
+
+| Comportamento | Esito |
+|---|---|
+| Continuazione ciclica mese→mese (Neri, Bruni F. giu→lug) | ✅ |
+| **Congelamento su assenze a cavallo di mese** (Rossi ferie 28/6→2/7: pos2 P … freeze … pos3 N il 3/7) | ✅ |
+| Schema settimanale coordinatrice (Azzurri G lun-ven) | ✅ |
+| Schemi settimanali UCP-DOM (INF→UI ven 6h, OSS→UO sab 4,25h) — scenario | ✅ |
+| Varianti da vincolo: `no_notti`→0 N, `solo_mattine`→solo M, `no_weekend`→0 turni weekend+freeze — scenario | ✅ |
+| Esclusione maternità intero mese a `store()` (Bruni Francesca UCP fuori dal piano) — scenario | ✅ |
+| Lista "da assegnare a mano" (neoassunto senza mese precedente) — scenario | ✅ |
+| `ore_effettive`+vestizione, somma turni = `ore_lavorate`, `saldo_mese`=lavorate−dovute | ✅ |
+
+Conclusione: **il cuore del generatore è solido** (continuazione, freeze, schemi, varianti, casi limite, saldi delle ore lavorate). Nessuna regressione trovata.
+
+### Implementazione del 2026-05-24 (continuazione sessione 6)
+
+- **`SchemaOreService`** (nuovo, step 3) — conteggio ore-assenza nel saldo ("presenza statistica"). `oreAssenzePerMese(idOp, anno, mese, dateConTurno)` → bucket `{ferie, permessi, malattia, formazione, maternita}`. Regole: `zero`→0; `maternita_8_6_0`→8/6/0; `da_schema`→ settimanale per giorno-settimana, **ciclico = blocco riparte da M** (decisione (a) del 24/05). `OperatoreModel::findConSettingCategoria` e `AssenzaModel::listConTipoPerOperatoreMese` aggiunti a supporto. NB: la risoluzione schema duplica `GeneratoreService` — candidata a estrazione in un `SchemaResolver`.
+- **`SaldoRicalcoloService`** — `ricalcolaMese` ora somma anche le ore delle assenze (via `SchemaOreService`), saltando i giorni già coperti da un turno (niente doppio conteggio). `SchemaOreService` iniettato come dipendenza opzionale costruita internamente (i 3 siti di `new SaldoRicalcoloService` restano intatti). Il bucket `maternita`/`aspettativa` è calcolato ma **non ancora agganciato** al saldo (manca la colonna → revisione 4-sexies).
+- **`GeneratoreService`** — assenze cicliche **> 2 giorni** interrompono la generazione da lì in poi (operatore in lista "ciclo interrotto … completa a mano"); assenze **1-2 giorni** mantengono il freeze-resume. Vale solo per schemi ciclici. `popolaCiclico` ritorna ora `{creati, interrottoDa}`.
+- **Verifica (transazione+rollback, 24/05)**: ✅ conteggio ciclico restart-da-M (Rossi 28/6→2/7: giu 22,75h + lug 10,50h = 33,25h); ✅ saldo accredita le ferie (Rossi lug: `ore_ferie` 0→10,50, `saldo_mese` −1,75→+8,75); ✅ stop su assenza >2gg (Neri ferie 10gg: 0 turni dopo) + prosegui su ≤2gg (Rossi permesso 2gg).
+
+### Gap residui (sequenza spec §8, da fare)
+
+1. **Revisione 4-sexies** (step 4) — decisa ma NON implementata: oggi `PianiTurnoController::store` **esclude del tutto** maternità/aspettativa intero mese (niente `piano_operatori`, niente `saldo_ore`); la spec §3 vuole **riga saldo preservata + nascosti dalla griglia**. Serve anche la colonna saldo per agganciare il bucket maternità/aspettativa già calcolato da `SchemaOreService` (es. `ore_assenza_conteggiata`).
+3. **Soluzione 2 (split notte tra i mesi)** non implementata nel `SaldoRicalcoloService` — le ore di N vanno tutte alla data di inizio. Impatta solo le notti a cavallo di fine mese (marginale per la demo).
+4. **`log_modifiche`** — `genera()` logga solo nel file applicativo, non in `log_modifiche` con metadata come da spec §5.
+5. **Bug colore celle** (§7) — `tipo_colore` non applicato alle celle del calendario in `views/piani_turno/show.twig`.
+6. **Tassonomia `/tipi-turno`** radio Lavoro/Assenza (rinviata dalla 5) — ancora aperta.
+
+### ✅ Nodo risolto il 2026-05-24 — regola di conteggio ore-assenza per schemi CICLICI
+
+> **DECISO (Olga, 24/05):** (a) il blocco di assenza ciclico **riparte da M e segue lo schema** (5 gg ferie = M M P N S = 33,25h). Il generatore **interrompe** la generazione dopo un'assenza **> 2 giorni** (≤2 gg: prosegue). Implementato e verificato — vedi sopra. Cronaca del nodo qui sotto per memoria.
+
+Le parti **decise/non ambigue**:
+- Settimanali (coord, UCP): `ore_assenza` per giorno-settimana, lette dalla tabella → univoco.
+- Maternità → 8/6/0; Aspettativa → 0. Univoci.
+
+La parte **aperta**: per un'assenza pluri-giorno su schema **ciclico** (Hospice regolare), che posizione prende ogni giorno per il conteggio?
+- Il **freeze del generatore** è deciso (eureca), ma è una decisione di *assegnazione turni*, non di conteggio.
+- La spec §3 dice "ogni assenza conta quanto la posizione di schema di quel giorno" + "la posizione si congela": applicato alla lettera, tutti i giorni del blocco cadrebbero sulla posizione congelata (es. Rossi: 5 gg ferie tutti contati come N = 52,5h → sovrastima).
+- Alternative emerse: (A) la posizione **avanza** nel conteggio (mix realistico, ~25,5h per 5 gg); (B) **schema ferie fisso** = template `M M P N S R` dal 1° giorno del blocco (ciclo pieno = 33,25h).
+- **Da decidere con Olga** prima di scrivere `SchemaOreService`. Trascrivere la decisione qui e in `project-conteggio-ore-assenze`.

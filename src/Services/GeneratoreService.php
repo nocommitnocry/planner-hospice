@@ -143,7 +143,10 @@ final class GeneratoreService
             $periodo = (int) $schema['row']['periodo_giorni'];
             $passi = $schema['passi'];
 
+            $interrottoDa = null;
             if ($schema['row']['famiglia'] === 'settimanale') {
+                // Gli schemi settimanali non hanno un ciclo da interrompere:
+                // lavorano comunque il loro pattern per giorno-settimana.
                 $creati = $this->popolaSettimanale($idPiano, $idOp, $giorni, $passi, $mappaAssenze, $occupate);
             } else {
                 $posIniziale = $this->posizioneIniziale($prevByOp[$idOp] ?? [], $passi, $periodo);
@@ -151,14 +154,28 @@ final class GeneratoreService
                     $manuali[] = ['operatore' => $nome, 'motivo' => 'nessun turno regolare nel mese precedente'];
                     continue;
                 }
-                $creati = $this->popolaCiclico($idPiano, $idOp, $giorni, $passi, $periodo, $posIniziale, $skipWeekend, $mappaAssenze, $occupate);
+                $res = $this->popolaCiclico($idPiano, $idOp, $giorni, $passi, $periodo, $posIniziale, $skipWeekend, $mappaAssenze, $occupate);
+                $creati = $res['creati'];
+                $interrottoDa = $res['interrottoDa'];
             }
 
             if ($creati > 0) {
                 $turniCreati += $creati;
                 $popolati[] = $nome;
                 $opDaRicalcolare[] = $idOp;
-            } else {
+            }
+            // Assenza > 2 giorni: il ciclo si ferma lì, il resto è copertura
+            // manuale (decisione 2026-05-24). L'operatore può comparire sia in
+            // "popolati" (turni pre-assenza) sia qui con la nota di rientro.
+            if ($interrottoDa !== null) {
+                $manuali[] = [
+                    'operatore' => $nome,
+                    'motivo' => sprintf(
+                        'ciclo interrotto da assenza > 2 giorni dal %s — completa a mano garantendo la copertura',
+                        (new DateTimeImmutable($interrottoDa))->format('d/m/Y'),
+                    ),
+                ];
+            } elseif ($creati === 0) {
                 $manuali[] = ['operatore' => $nome, 'motivo' => 'nessuna cella disponibile (assenze/turni già presenti)'];
             }
         }
@@ -202,7 +219,16 @@ final class GeneratoreService
 
     /**
      * Riempie uno schema ciclico avanzando la posizione giorno per giorno.
-     * Assenze e (se skipWeekend) weekend CONGELANO: non avanzano e non ricevono turno.
+     *
+     * - Assenza **breve (1-2 giorni)** e (se skipWeekend) weekend → CONGELANO:
+     *   non avanzano la posizione e non ricevono turno, il ciclo riprende dopo.
+     * - Assenza **> 2 giorni** → la generazione si INTERROMPE da lì in poi
+     *   (decisione 2026-05-24): i giorni dell'assenza e quelli successivi restano
+     *   vuoti, la coordinatrice riparte non-ciclico garantendo le presenze minime.
+     * - Date già occupate (turno cross-setting, unique globale) → congelano.
+     *
+     * @return array{creati:int, interrottoDa:?string} interrottoDa = data Y-m-d
+     *         dell'assenza lunga che ha fermato il ciclo, o null.
      */
     private function popolaCiclico(
         int $idPiano,
@@ -214,12 +240,19 @@ final class GeneratoreService
         bool $skipWeekend,
         array $mappaAssenze,
         array $occupate,
-    ): int {
+    ): array {
         $creati = 0;
         $pos = $posIniziale;
         foreach ($giorni as $data) {
-            if ($this->isAssente($mappaAssenze, $idOp, $data) || $this->isOccupato($occupate, $idOp, $data)) {
-                continue; // congela
+            $blocco = $this->bloccoAssenza($mappaAssenze, $idOp, $data);
+            if ($blocco !== null) {
+                if ($this->spanGiorni($blocco) > 2) {
+                    return ['creati' => $creati, 'interrottoDa' => $data]; // stop, resto a mano
+                }
+                continue; // assenza breve: congela e prosegui
+            }
+            if ($this->isOccupato($occupate, $idOp, $data)) {
+                continue; // congela (turno già presente in altro piano)
             }
             if ($skipWeekend && (int) (new DateTimeImmutable($data))->format('N') >= 6) {
                 continue; // congela sul weekend
@@ -231,7 +264,7 @@ final class GeneratoreService
             }
             $pos = ($pos + 1) % $periodo;
         }
-        return $creati;
+        return ['creati' => $creati, 'interrottoDa' => null];
     }
 
     /** Crea un turno con le ore_effettive del passo (Opzione B). */
@@ -403,12 +436,32 @@ final class GeneratoreService
     /** @param array<int, list<array{inizio:string, fine:string}>> $mappa */
     private function isAssente(array $mappa, int $idOp, string $data): bool
     {
+        return $this->bloccoAssenza($mappa, $idOp, $data) !== null;
+    }
+
+    /**
+     * Il blocco di assenza che copre la data (o null). Confronto lessicografico
+     * Y-m-d. `inizio`/`fine` sono le date PIENE del record (anche fuori dal mese).
+     *
+     * @param array<int, list<array{inizio:string, fine:string}>> $mappa
+     * @return array{inizio:string, fine:string}|null
+     */
+    private function bloccoAssenza(array $mappa, int $idOp, string $data): ?array
+    {
         foreach ($mappa[$idOp] ?? [] as $r) {
             if ($r['inizio'] <= $data && $data <= $r['fine']) {
-                return true;
+                return $r;
             }
         }
-        return false;
+        return null;
+    }
+
+    /** Durata in giorni di calendario del blocco di assenza (estremi inclusi). */
+    private function spanGiorni(array $blocco): int
+    {
+        $i = new DateTimeImmutable($blocco['inizio']);
+        $f = new DateTimeImmutable($blocco['fine']);
+        return (int) $i->diff($f)->days + 1;
     }
 
     /** @param array<int, list<string>> $occupate */
