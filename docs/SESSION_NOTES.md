@@ -866,12 +866,23 @@ Maternità/aspettativa che copre l'**intero mese**: non più escluse del tutto. 
 - **`views/piani_turno/show.twig`** — la **griglia** salta i nascosti (`saldi|filter(...)` — NB: `{% for ... if %}` è stato rimosso in Twig 3); la **tabella saldo** li tiene con badge "fuori griglia".
 - **Verifica (24/05)**: ✅ op4 (MAT intero mese) incluso nel piano, `ore_maternita=168`, `saldo_mese=+3` (≈ neutro, non −165); ✅ generatore lo salta; ✅ `nascostiGriglia=[4]`; ✅ aspettativa → bucket 0 (deficit preservato); ✅ `show.twig` compila col View reale.
 
+### Bug colore celle — RISOLTO il 2026-05-24 (era la CSP, non il rendering)
+
+Lunga caccia (vedi anche [[project-csp-no-inline]] in memoria). Sintomo: celle del calendario tutte bianche nonostante `tipo_colore` valorizzato e lo `style="background-color:.."` presente nell'HTML. **Causa vera: la CSP** (`SecurityHeaders`: `style-src 'self'`, `script-src 'self'`) **blocca TUTTI gli attributi inline** — `style=` (colori) e `on*=` (conferme). Gli sfondi da classe (app.css) passavano, gli inline no: è ciò che alla fine ha smascherato il bug (console F12). Olga ha scelto di tenere la CSP stretta e spostare tutto su classi/JS esterno (no `'unsafe-inline'`).
+
+Fix (commit `554bcab`):
+- **Colori → classi.** `AssetController::tipiTurnoCss` serve `/assets/tipi-turno-colori` (path **senza `.css`**: `php -S` intercetta i `*.css` non esistenti → 404 prima del router) con `.tt-bg-{id}{ --bs-table-bg:#col; background-color:#col }`. `<link>` in `base.twig`. Celle (bozza+pubblicato), banda cross-setting, swatch/badge (turni/form, tipi-turno, assenze) usano `class="tt-bg-{id}"`. `TurnoModel::listCrossSettingPerPiano` espone `id_tipo_turno`.
+- **Conferme → `data-confirm` + `public/js/app.js`** (listener delegato). 12 `onsubmit="return confirm()"` sostituiti.
+- **Larghezze colonne → classi** `.w-*` in `app.css`. **Zero `style=` inline** rimasti nei template.
+- **Migration `0008` + `schema.sql`**: palette canonica. `G` (coordinatrice) e `DV` erano `#FFFFFF` (invisibili) → oro/celeste; M/P/N/S/F allineati (il seed originale aveva M/P bianchi).
+
 ### Gap residui (sequenza spec §8, da fare)
 
 1. **Soluzione 2 (split notte tra i mesi)** non implementata nel `SaldoRicalcoloService` — le ore di N vanno tutte alla data di inizio. Impatta solo le notti a cavallo di fine mese (marginale per la demo).
 2. **`log_modifiche`** — `genera()` logga solo nel file applicativo, non in `log_modifiche` con metadata come da spec §5.
-3. **Bug colore celle** (§7) — `tipo_colore` non applicato alle celle del calendario in `views/piani_turno/show.twig`.
-4. **Tassonomia `/tipi-turno`** radio Lavoro/Assenza (rinviata dalla 5) — ancora aperta.
+3. **Tassonomia `/tipi-turno`** radio Lavoro/Assenza (rinviata dalla 5) — ancora aperta.
+4. **Seed `schema.sql` incompleto**: `DV` e `MAT` esistono nel DB ma non nel seed (un install nuovo non li avrebbe). `Ms/Ps/Ns` nel seed vs `MS/PS/NS` nel DB (case). Da riconciliare.
+5. Cosmetico: 404 source-map `bootstrap.min.css.map` in console (solo dev-tools, innocuo).
 
 ### ✅ Nodo risolto il 2026-05-24 — regola di conteggio ore-assenza per schemi CICLICI
 
