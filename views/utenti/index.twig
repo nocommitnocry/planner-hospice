@@ -28,7 +28,7 @@
                     <th>Setting</th>
                     <th class="text-center">Stato</th>
                     <th>Ultimo accesso</th>
-                    <th style="width:14rem" class="text-end">Azioni</th>
+                    <th class="text-end w-14r">Azioni</th>
                 </tr>
             </thead>
             <tbody>
@@ -70,7 +70,7 @@
                             {% if u.id != currentUserId %}
                                 <form method="post" action="{{ url('/utenti/' ~ u.id ~ '/delete') }}"
                                       class="d-inline"
-                                      onsubmit="return confirm('Eliminare l\'utente «{{ u.username }}»? L\'azione è irreversibile.');">
+                                      data-confirm="Eliminare l'utente «{{ u.username }}»? L'azione è irreversibile.">
                                     {{ csrf_field() }}
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
                                 </form>

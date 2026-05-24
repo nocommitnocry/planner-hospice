@@ -9,7 +9,7 @@
     <p class="text-muted">{{ message|default('Si è verificato un problema durante l\'elaborazione della richiesta.') }}</p>
 
     {% if debug and exception %}
-        <div class="alert alert-secondary text-start mx-auto mt-4" style="max-width: 900px;">
+        <div class="alert alert-secondary text-start mx-auto mt-4 mw-900">
             <p class="mb-1"><strong>{{ exception|e }}</strong></p>
             <pre class="small mb-0">{{ exception.getTraceAsString() }}</pre>
         </div>

@@ -8,6 +8,9 @@
     <link rel="icon" href="{{ asset('images/favicon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ asset('css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+    {# Colori dei tipi turno come classi (.tt-bg-{id}): evita gli style inline,
+       bloccati dalla CSP style-src 'self'. Generato da AssetController. #}
+    <link rel="stylesheet" href="{{ url('/assets/tipi-turno-colori') }}">
 
     {% block head %}{% endblock %}
 </head>
@@ -37,6 +40,7 @@
     </footer>
 
     <script src="{{ asset('js/bootstrap.bundle.min.js') }}" defer></script>
+    <script src="{{ asset('js/app.js') }}" defer></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

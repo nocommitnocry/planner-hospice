@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use App\Controllers\AssenzeController;
+use App\Controllers\AssetController;
 use App\Controllers\AuthController;
 use App\Controllers\CategorieOperatoriController;
 use App\Controllers\DashboardController;
@@ -42,6 +43,13 @@ return function (Router $r): void {
     // -------------------------------------------------------------------------
     $r->get('/login', [AuthController::class, 'showLogin'], public: true, name: 'login.show');
     $r->post('/login', [AuthController::class, 'doLogin'], public: true, name: 'login.do');
+
+    // Stylesheet dinamico coi colori dei tipi turno (classi .tt-bg-{id}).
+    // Pubblico: non sensibile, e così carica senza dipendere dalla sessione.
+    // NB path SENZA estensione .css: il server php -S intercetta i path *.css
+    // (statici) e darebbe 404 senza passare dal router. Il Content-Type text/css
+    // è impostato dal controller, quindi il browser lo tratta come foglio di stile.
+    $r->get('/assets/tipi-turno-colori', [AssetController::class, 'tipiTurnoCss'], public: true, name: 'assets.tipi-turno-css');
 
     // -------------------------------------------------------------------------
     // Sessione (richiede auth)

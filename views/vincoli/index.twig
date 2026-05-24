@@ -30,7 +30,7 @@
                     <th>Al</th>
                     <th>Note</th>
                     <th>Inserito da</th>
-                    <th style="width:13rem" class="text-end">Azioni</th>
+                    <th class="text-end w-13r">Azioni</th>
                 </tr>
             </thead>
             <tbody>
@@ -58,7 +58,7 @@
                                class="btn btn-sm btn-outline-secondary">Modifica</a>
                             <form method="post" action="{{ url('/vincoli/' ~ v.id ~ '/delete') }}"
                                   class="d-inline"
-                                  onsubmit="return confirm('Eliminare il vincolo {{ v.tipo_vincolo }} di {{ v.operatore_cognome }} {{ v.operatore_nome }}?');">
+                                  data-confirm="Eliminare il vincolo {{ v.tipo_vincolo }} di {{ v.operatore_cognome }} {{ v.operatore_nome }}?">
                                 {{ csrf_field() }}
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
                             </form>

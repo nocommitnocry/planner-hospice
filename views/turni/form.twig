@@ -116,8 +116,7 @@
                 {% set tipoSel = old_input.id_tipo_turno ?? (turno ? turno.id_tipo_turno : null) %}
                 <div class="tipi-turno-grid {% if form_errors.id_tipo_turno %}is-invalid{% endif %}">
                     {% for t in tipi %}
-                        <label class="tipo-turno-opzione {% if tipoSel == t.id %}selected{% endif %}"
-                               style="background-color: {{ t.colore }};"
+                        <label class="tipo-turno-opzione tt-bg-{{ t.id }} {% if tipoSel == t.id %}selected{% endif %}"
                                title="{{ t.descrizione }} ({{ t.ore_conteggiate }}h)">
                             <input type="radio" name="id_tipo_turno" value="{{ t.id }}"
                                    {% if tipoSel == t.id %}checked{% endif %} required>
@@ -165,7 +164,7 @@
         {% if turno %}
             <form id="form-delete-turno" method="post"
                   action="{{ url('/piani-turno/' ~ piano.id ~ '/turni/' ~ turno.id ~ '/delete') }}"
-                  onsubmit="return confirm('Eliminare questo turno? Il saldo dell\'operatore verrà ricalcolato.');"
+                  data-confirm="Eliminare questo turno? Il saldo dell'operatore verrà ricalcolato."
                   class="d-none">
                 {{ csrf_field() }}
             </form>

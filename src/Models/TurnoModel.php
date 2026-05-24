@@ -88,6 +88,7 @@ final class TurnoModel extends BaseModel
         $sql = "SELECT t.id_operatore,
                        t.data,
                        t.note,
+                       t.id_tipo_turno,
                        tt.codice AS tipo_codice,
                        tt.descrizione AS tipo_descrizione,
                        tt.colore AS tipo_colore,

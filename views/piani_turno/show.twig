@@ -26,7 +26,7 @@
         <div class="d-flex gap-2 flex-wrap">
             {% if piano.stato == 'bozza' %}
                 <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/publish') }}" class="d-inline"
-                      onsubmit="return confirm('Pubblicare il piano? Sarà visibile come piano corrente.');">
+                      data-confirm="Pubblicare il piano? Sarà visibile come piano corrente.">
                     {{ csrf_field() }}
                     <button type="submit" class="btn btn-success">Pubblica</button>
                 </form>
@@ -34,12 +34,12 @@
                    class="btn btn-outline-danger">Elimina…</a>
             {% elseif piano.stato == 'pubblicato' %}
                 <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/unpublish') }}" class="d-inline"
-                      onsubmit="return confirm('Riportare il piano in bozza per correggerlo?');">
+                      data-confirm="Riportare il piano in bozza per correggerlo?">
                     {{ csrf_field() }}
                     <button type="submit" class="btn btn-outline-warning">Riporta in bozza</button>
                 </form>
                 <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/archive') }}" class="d-inline"
-                      onsubmit="return confirm('Archiviare definitivamente il piano? L\'operazione non è reversibile.');">
+                      data-confirm="Archiviare definitivamente il piano? L'operazione non è reversibile.">
                     {{ csrf_field() }}
                     <button type="submit" class="btn btn-outline-secondary">Archivia</button>
                 </form>
@@ -89,7 +89,7 @@
     {% if celleEditabili %}
         <div class="d-flex gap-2 flex-wrap">
             <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/genera') }}" class="d-inline"
-                  onsubmit="return confirm('Popolare la bozza continuando dal mese precedente pubblicato?\n\nI turni e i giorni di assenza già presenti non vengono toccati. Gli operatori non continuabili verranno elencati come «da assegnare a mano».');">
+                  data-confirm="Popolare la bozza continuando dal mese precedente pubblicato? I turni e i giorni di assenza già presenti non vengono toccati. Gli operatori non continuabili verranno elencati come «da assegnare a mano».">
                 {{ csrf_field() }}
                 <button type="submit" class="btn btn-sm btn-primary">&#x21bb; Continua dal mese precedente</button>
             </form>
@@ -164,7 +164,7 @@
                                 {# Occupata in un altro piano dello stesso mese: overlay non cliccabile. #}
                                 <td class="{{ cellClass }} cella-cross-setting"
                                     title="{{ cross.tipo_codice }} · {{ cross.tipo_descrizione }} — nel piano {{ cross.setting_nome }}{% if cross.note %} ({{ cross.note }}){% endif %}">
-                                    <span class="cross-banda" style="background-color: {{ cross.tipo_colore }};" aria-hidden="true"></span>
+                                    <span class="cross-banda tt-bg-{{ cross.id_tipo_turno }}" aria-hidden="true"></span>
                                     <span class="cross-codice">{{ cross.tipo_codice }}</span>
                                 </td>
                             {% elseif fuoriFinestra %}
@@ -182,11 +182,12 @@
                                     <span class="assenza-codice">{{ assenzaCorrente.tipo_codice }}</span>
                                 </td>
                             {% elseif celleEditabili %}
-                                <td class="{{ cellClass }} cella-editabile{% if conflittoAssenza %} cella-conflitto-assenza{% endif %}">
+                                {# Colore via classe tt-bg-{id} sul <td> (CSP-safe): imposta --bs-table-bg,
+                                   Bootstrap ridipinge la cella; l'<a> sopra resta trasparente. #}
+                                <td class="{{ cellClass }} cella-editabile{% if turno %} tt-bg-{{ turno.id_tipo_turno }}{% endif %}{% if conflittoAssenza %} cella-conflitto-assenza{% endif %}">
                                     <a class="cella-link"
                                        href="{{ url('/piani-turno/' ~ piano.id ~ '/turni/edit?operatore=' ~ s.id_operatore ~ '&data=' ~ g.date) }}"
                                        {% if turno %}
-                                           style="background-color: {{ turno.tipo_colore }};"
                                            title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}{% if conflittoAssenza %} — in conflitto con assenza {{ assenzaCorrente.tipo_codice }} dal {{ assenzaCorrente.data_inizio|date('d/m/Y') }} al {{ assenzaCorrente.data_fine|date('d/m/Y') }}{% endif %}"
                                        {% else %}
                                            title="Assegna turno a {{ s.operatore_cognome }} {{ s.operatore_nome }} il {{ g.numero }}"
@@ -195,9 +196,8 @@
                                     </a>
                                 </td>
                             {% else %}
-                                <td class="{{ cellClass }}{% if conflittoAssenza %} cella-conflitto-assenza{% endif %}"
+                                <td class="{{ cellClass }}{% if turno %} tt-bg-{{ turno.id_tipo_turno }}{% endif %}{% if conflittoAssenza %} cella-conflitto-assenza{% endif %}"
                                     {% if turno %}
-                                        style="background-color: {{ turno.tipo_colore }};"
                                         title="{{ turno.tipo_descrizione }}{% if turno.note %} — {{ turno.note }}{% endif %}{% if conflittoAssenza %} — in conflitto con assenza {{ assenzaCorrente.tipo_codice }} dal {{ assenzaCorrente.data_inizio|date('d/m/Y') }} al {{ assenzaCorrente.data_fine|date('d/m/Y') }}{% endif %}"
                                     {% endif %}>
                                     {% if turno %}{{ turno.tipo_codice }}{% else %}&nbsp;{% endif %}
@@ -250,7 +250,7 @@
                             <form method="post"
                                   action="{{ url('/piani-turno/' ~ piano.id ~ '/operatori/' ~ s.id_operatore ~ '/rimuovi') }}"
                                   class="d-inline"
-                                  onsubmit="return confirm('Rimuovere {{ s.operatore_cognome }} {{ s.operatore_nome }} dal piano? L\'operazione fallisce se ha turni assegnati.');">
+                                  data-confirm="Rimuovere {{ s.operatore_cognome }} {{ s.operatore_nome }} dal piano? L'operazione fallisce se ha turni assegnati.">
                                 {{ csrf_field() }}
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Rimuovi</button>
                             </form>

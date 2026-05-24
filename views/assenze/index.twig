@@ -41,7 +41,7 @@
                     <th>Al</th>
                     <th>Note</th>
                     <th>Inserita da</th>
-                    <th style="width:13rem" class="text-end">Azioni</th>
+                    <th class="text-end w-13r">Azioni</th>
                 </tr>
             </thead>
             <tbody>
@@ -50,8 +50,7 @@
                         <td><strong>{{ a.operatore_cognome }}</strong> {{ a.operatore_nome }}</td>
                         <td><span class="badge bg-light text-dark border">{{ a.setting_nome }}</span></td>
                         <td>
-                            <span class="badge"
-                                  style="background-color: {{ a.tipo_colore }}; color: #111;">
+                            <span class="badge badge-tipo tt-bg-{{ a.id_tipo_turno }}">
                                 {{ a.tipo_codice }}
                             </span>
                             <span class="text-muted small">{{ a.tipo_descrizione }}</span>
@@ -69,7 +68,7 @@
                                class="btn btn-sm btn-outline-secondary">Modifica</a>
                             <form method="post" action="{{ url('/assenze/' ~ a.id ~ '/delete') }}"
                                   class="d-inline"
-                                  onsubmit="return confirm('Eliminare l\'assenza di {{ a.operatore_cognome }} {{ a.operatore_nome }} dal {{ a.data_inizio }} al {{ a.data_fine }}?');">
+                                  data-confirm="Eliminare l'assenza di {{ a.operatore_cognome }} {{ a.operatore_nome }} dal {{ a.data_inizio }} al {{ a.data_fine }}?">
                                 {{ csrf_field() }}
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Elimina</button>
                             </form>
