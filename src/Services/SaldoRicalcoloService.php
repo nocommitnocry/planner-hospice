@@ -27,7 +27,10 @@ use App\Models\VincoloOperatoreModel;
  *  - is_formazione → ore_formazione
  *  - altrimenti    → ore_lavorate
  *
- * saldo_mese        = (lavorate + ferie + permessi + malattia + formazione) - ore_dovute
+ * Le ore delle ASSENZE (non sono turni: vivono in `assenze`) sono aggiunte ai
+ * bucket via SchemaOreService; `maternita` raccoglie le esclude_pianificazione.
+ *
+ * saldo_mese        = (lavorate + ferie + permessi + malattia + formazione + maternita) - ore_dovute
  * saldo_progressivo = saldo_progressivo del mese precedente + saldo_mese
  *
  * API pubblica (sessione 4-quater: split di `ricalcola`):
@@ -85,6 +88,7 @@ final class SaldoRicalcoloService
         $orePermessi = 0.0;
         $oreMalattia = 0.0;
         $oreFormazione = 0.0;
+        $oreMaternita = 0.0;
 
         $dateConTurno = [];
         foreach ($this->turni->listByOperatoreInMese($idOperatore, $anno, $mese) as $t) {
@@ -113,16 +117,17 @@ final class SaldoRicalcoloService
         // Ore delle ASSENZE (sessione 6): non sono turni, vivono in `assenze`.
         // SchemaOreService le conta "quanto la posizione di schema" e le divide
         // per bucket. I giorni già coperti da un turno vengono saltati.
-        // NB: il bucket `maternita` (MAT/ASP) non è ancora agganciato al saldo
-        // — manca la colonna dedicata (revisione 4-sexies).
+        // Il bucket `maternita` raccoglie le assenze esclude_pianificazione
+        // (maternità 8/6/0 -> saldo ~ neutro; aspettativa 0 -> resta il deficit).
         $assenzeOre = $this->schemaOre->oreAssenzePerMese($idOperatore, $anno, $mese, $dateConTurno);
         $oreFerie      += $assenzeOre['ferie'];
         $orePermessi   += $assenzeOre['permessi'];
         $oreMalattia   += $assenzeOre['malattia'];
         $oreFormazione += $assenzeOre['formazione'];
+        $oreMaternita  += $assenzeOre['maternita'];
 
         $oreDovute = (float) $saldo['ore_dovute'];
-        $saldoMese = ($oreLavorate + $oreFerie + $orePermessi + $oreMalattia + $oreFormazione) - $oreDovute;
+        $saldoMese = ($oreLavorate + $oreFerie + $orePermessi + $oreMalattia + $oreFormazione + $oreMaternita) - $oreDovute;
         $progPrev = (float) $this->saldi->getProgressivoPrevious($idOperatore, $anno, $mese);
         $saldoProg = $progPrev + $saldoMese;
 
@@ -132,6 +137,7 @@ final class SaldoRicalcoloService
             'ore_permessi'      => $this->fmt($orePermessi),
             'ore_malattia'      => $this->fmt($oreMalattia),
             'ore_formazione'    => $this->fmt($oreFormazione),
+            'ore_maternita'     => $this->fmt($oreMaternita),
             'saldo_mese'        => $this->fmt($saldoMese),
             'saldo_progressivo' => $this->fmt($saldoProg),
         ]);

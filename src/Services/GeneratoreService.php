@@ -114,6 +114,10 @@ final class GeneratoreService
         // Date già occupate (qualsiasi piano): l'UNIQUE (operatore, data) è
         // globale, quindi le saltiamo come fossero assenze (congelano il ciclo).
         $occupate = $this->turni->dateOccupateInMese($idOperatori, $anno, $mese);
+        // Operatori "tutelati" (maternità/aspettativa a mese intero): nascosti
+        // dalla griglia (4-sexies rivista), il generatore li ignora — niente turni
+        // e nessun flag (non sono "da assegnare a mano": sono fuori pianificazione).
+        $idEsclusi = $this->assenze->listIdOperatoriEsclusiNelMese($anno, $mese);
 
         $turniCreati = 0;
         $popolati = [];
@@ -123,6 +127,10 @@ final class GeneratoreService
         foreach ($operatori as $op) {
             $idOp = (int) $op['id_operatore'];
             $nome = trim((string) $op['operatore_cognome'] . ' ' . (string) $op['operatore_nome']);
+
+            if (in_array($idOp, $idEsclusi, true)) {
+                continue; // maternità/aspettativa intero mese: fuori dalla generazione
+            }
 
             $vincoliSet = $this->vincoliAttivi($idOp, $primo, $ultimo);
             [$schemaCodice, $skipWeekend] = $this->risolviSchema(

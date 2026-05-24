@@ -855,13 +855,23 @@ Conclusione: **il cuore del generatore è solido** (continuazione, freeze, schem
 - **`GeneratoreService`** — assenze cicliche **> 2 giorni** interrompono la generazione da lì in poi (operatore in lista "ciclo interrotto … completa a mano"); assenze **1-2 giorni** mantengono il freeze-resume. Vale solo per schemi ciclici. `popolaCiclico` ritorna ora `{creati, interrottoDa}`.
 - **Verifica (transazione+rollback, 24/05)**: ✅ conteggio ciclico restart-da-M (Rossi 28/6→2/7: giu 22,75h + lug 10,50h = 33,25h); ✅ saldo accredita le ferie (Rossi lug: `ore_ferie` 0→10,50, `saldo_mese` −1,75→+8,75); ✅ stop su assenza >2gg (Neri ferie 10gg: 0 turni dopo) + prosegui su ≤2gg (Rossi permesso 2gg).
 
+### Revisione 4-sexies (step 4) — FATTA il 2026-05-24
+
+Maternità/aspettativa che copre l'**intero mese**: non più escluse del tutto. Ora incluse con la riga di saldo (le "ore perdute" non spariscono, il `saldo_progressivo` non salta il buco) ma **nascoste dalla griglia** assegnabile.
+
+- **Migration `0007`** — `saldo_ore.ore_maternita DECIMAL(6,2) DEFAULT 0.00`; `saldo_mese` ora include anche `+ ore_maternita`. `schema.sql` allineato. `SaldoOreModel` fillable aggiornato.
+- **`SaldoRicalcoloService`** — scrive `ore_maternita` (= bucket `maternita` di `SchemaOreService`) e lo somma nel `saldo_mese`. Effetto: maternità 8/6/0 → saldo ≈ neutro; aspettativa 0 → resta `-ore_dovute` (deficit visibile).
+- **`PianiTurnoController::store`** — non esclude più gli operatori con assenza `esclude_pianificazione` a mese intero: li include e fa `ricalcola` sui soli esclusi (saldo riflette subito 8/6/0 o 0). `show()` calcola `nascostiGriglia` (esclusi ∩ operatori del piano) e lo passa alla vista.
+- **`GeneratoreService`** — salta silenziosamente gli operatori esclusi-mese-intero (niente turni, niente flag manuale).
+- **`views/piani_turno/show.twig`** — la **griglia** salta i nascosti (`saldi|filter(...)` — NB: `{% for ... if %}` è stato rimosso in Twig 3); la **tabella saldo** li tiene con badge "fuori griglia".
+- **Verifica (24/05)**: ✅ op4 (MAT intero mese) incluso nel piano, `ore_maternita=168`, `saldo_mese=+3` (≈ neutro, non −165); ✅ generatore lo salta; ✅ `nascostiGriglia=[4]`; ✅ aspettativa → bucket 0 (deficit preservato); ✅ `show.twig` compila col View reale.
+
 ### Gap residui (sequenza spec §8, da fare)
 
-1. **Revisione 4-sexies** (step 4) — decisa ma NON implementata: oggi `PianiTurnoController::store` **esclude del tutto** maternità/aspettativa intero mese (niente `piano_operatori`, niente `saldo_ore`); la spec §3 vuole **riga saldo preservata + nascosti dalla griglia**. Serve anche la colonna saldo per agganciare il bucket maternità/aspettativa già calcolato da `SchemaOreService` (es. `ore_assenza_conteggiata`).
-3. **Soluzione 2 (split notte tra i mesi)** non implementata nel `SaldoRicalcoloService` — le ore di N vanno tutte alla data di inizio. Impatta solo le notti a cavallo di fine mese (marginale per la demo).
-4. **`log_modifiche`** — `genera()` logga solo nel file applicativo, non in `log_modifiche` con metadata come da spec §5.
-5. **Bug colore celle** (§7) — `tipo_colore` non applicato alle celle del calendario in `views/piani_turno/show.twig`.
-6. **Tassonomia `/tipi-turno`** radio Lavoro/Assenza (rinviata dalla 5) — ancora aperta.
+1. **Soluzione 2 (split notte tra i mesi)** non implementata nel `SaldoRicalcoloService` — le ore di N vanno tutte alla data di inizio. Impatta solo le notti a cavallo di fine mese (marginale per la demo).
+2. **`log_modifiche`** — `genera()` logga solo nel file applicativo, non in `log_modifiche` con metadata come da spec §5.
+3. **Bug colore celle** (§7) — `tipo_colore` non applicato alle celle del calendario in `views/piani_turno/show.twig`.
+4. **Tassonomia `/tipi-turno`** radio Lavoro/Assenza (rinviata dalla 5) — ancora aperta.
 
 ### ✅ Nodo risolto il 2026-05-24 — regola di conteggio ore-assenza per schemi CICLICI
 

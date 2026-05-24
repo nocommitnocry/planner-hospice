@@ -307,6 +307,7 @@ CREATE TABLE IF NOT EXISTS saldo_ore (
     ore_permessi DECIMAL(6,2) NOT NULL DEFAULT 0.00,
     ore_malattia DECIMAL(6,2) NOT NULL DEFAULT 0.00,
     ore_formazione DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+    ore_maternita DECIMAL(6,2) NOT NULL DEFAULT 0.00,
     saldo_mese DECIMAL(6,2) NOT NULL,
     saldo_progressivo DECIMAL(6,2) NOT NULL,
     note TEXT,

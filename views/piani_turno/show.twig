@@ -125,7 +125,7 @@
                     </td>
                 </tr>
             {% else %}
-                {% for s in saldi %}
+                {% for s in saldi|filter(s => s.id_operatore not in nascostiGriglia) %}
                     <tr>
                         <td class="op-col">
                             <strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}
@@ -232,6 +232,10 @@
                         <strong>{{ s.operatore_cognome }}</strong> {{ s.operatore_nome }}
                         {% if s.aggiunto_manualmente %}
                             <span class="badge bg-info text-dark" title="{{ s.setting_nome }}">in itinere</span>
+                        {% endif %}
+                        {% if s.id_operatore in nascostiGriglia %}
+                            <span class="badge bg-secondary"
+                                  title="Assenza che copre l'intero mese: non compare nel calendario, ma il saldo resta conteggiato.">{{ nascostiMotivo[s.id_operatore] }} · tutto il mese</span>
                         {% endif %}
                     </td>
                     <td>{{ s.categoria_nome }}</td>

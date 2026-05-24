@@ -17,6 +17,7 @@ final class SaldoOreModel extends BaseModel
         'ore_permessi',
         'ore_malattia',
         'ore_formazione',
+        'ore_maternita',
         'saldo_mese',
         'saldo_progressivo',
         'note',

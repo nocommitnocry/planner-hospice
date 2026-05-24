@@ -187,21 +187,21 @@ final class AssenzaModel extends BaseModel
     }
 
     /**
-     * Operatori che hanno almeno un'assenza di tipo `esclude_pianificazione=1`
-     * che copre INTERAMENTE il mese (data_inizio <= primo_del_mese
-     * AND data_fine >= ultimo_del_mese). Ritorna gli id_operatore distinti.
+     * Assenze di tipo `esclude_pianificazione=1` (maternità/aspettativa) che
+     * coprono INTERAMENTE il mese (data_inizio <= primo AND data_fine >= ultimo),
+     * con il tipo. Usato dalla `show` per etichettare l'operatore nascosto dalla
+     * griglia col motivo reale (4-sexies rivista).
      *
-     * Usato da `PianiTurnoController::store` per escludere le maternità dal
-     * fotografa-operatori del piano nuovo (vedi 4-sexies).
-     *
-     * @return list<int>
+     * @return list<array{id_operatore:int, tipo_codice:string, tipo_descrizione:string}>
      */
-    public function listIdOperatoriEsclusiNelMese(int $anno, int $mese): array
+    public function listEsclusioniConTipoNelMese(int $anno, int $mese): array
     {
         $primo  = sprintf('%04d-%02d-01', $anno, $mese);
         $ultimo = (new \DateTimeImmutable($primo))->modify('last day of this month')->format('Y-m-d');
-        $rows = $this->db->query(
-            "SELECT DISTINCT a.id_operatore
+        return $this->db->query(
+            "SELECT DISTINCT a.id_operatore,
+                    t.codice AS tipo_codice,
+                    t.descrizione AS tipo_descrizione
              FROM assenze a
              JOIN tipi_turno t ON t.id = a.id_tipo_turno
              WHERE t.esclude_pianificazione = 1
@@ -209,6 +209,19 @@ final class AssenzaModel extends BaseModel
                AND a.data_fine   >= :ultimo",
             ['primo' => $primo, 'ultimo' => $ultimo],
         );
-        return array_map(static fn ($r) => (int) $r['id_operatore'], $rows);
+    }
+
+    /**
+     * Id operatore (distinti) con un'assenza esclude_pianificazione a mese intero.
+     * Usato da `store` e dal generatore (vedi 4-sexies rivista).
+     *
+     * @return list<int>
+     */
+    public function listIdOperatoriEsclusiNelMese(int $anno, int $mese): array
+    {
+        return array_values(array_unique(array_map(
+            static fn ($r) => (int) $r['id_operatore'],
+            $this->listEsclusioniConTipoNelMese($anno, $mese),
+        )));
     }
 }

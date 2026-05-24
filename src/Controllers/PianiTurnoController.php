@@ -152,16 +152,14 @@ final class PianiTurnoController extends BaseController
         // le ore residue vanno regolate a mano dal saldo del piano.
         $operatoriDelPiano = $this->operatori->findInServizioNelMese($anno, $mese, $idSetting);
 
-        // Esclusione automatica di chi ha un'assenza con tipo `esclude_pianificazione=1`
-        // che copre INTERAMENTE il mese (sessione 4-sexies). Caso d'uso primario: maternità.
-        // Per assenze parziali non si esclude — la riduzione delle ore_dovute resta a mano.
+        // Operatori con assenza `esclude_pianificazione=1` che copre INTERAMENTE
+        // il mese (maternità/aspettativa). 4-sexies RIVISTA (2026-05-24): NON più
+        // esclusi dal piano. Vengono inclusi con la riga di saldo — così le "ore
+        // perdute" restano e il saldo_progressivo non salta il buco — ma saranno
+        // nascosti dalla griglia assegnabile (logica in `show` e nel generatore).
+        // Il loro saldo viene ricalcolato subito (l'assenza è già in `assenze`):
+        // maternità 8/6/0 → ≈ neutro; aspettativa 0 → resta il deficit.
         $idEsclusi = $this->assenze->listIdOperatoriEsclusiNelMese($anno, $mese);
-        if ($idEsclusi !== []) {
-            $operatoriDelPiano = array_values(array_filter(
-                $operatoriDelPiano,
-                static fn ($op) => !in_array((int) $op['id'], $idEsclusi, true),
-            ));
-        }
 
         if ($operatoriDelPiano === []) {
             return $this->redirect(
@@ -174,7 +172,7 @@ final class PianiTurnoController extends BaseController
         $userId = $this->currentUserId();
 
         try {
-            $idPiano = $this->db->transaction(function () use ($validation, $anno, $mese, $idSetting, $operatoriDelPiano, $userId): int {
+            $idPiano = $this->db->transaction(function () use ($validation, $anno, $mese, $idSetting, $operatoriDelPiano, $idEsclusi, $userId): int {
                 $idPiano = $this->piani->create([
                     'anno'       => $anno,
                     'mese'       => $mese,
@@ -223,6 +221,16 @@ final class PianiTurnoController extends BaseController
                         'aggiunto_da'          => null,
                         'note_aggiunta'        => null,
                     ]);
+                }
+
+                // Operatori tutelati (maternità/aspettativa intero mese) DI QUESTO
+                // piano: il saldo appena creato è -ore_dovute; lo ricalcoliamo per
+                // agganciare le ore-assenza (8/6/0 o 0) già presenti in `assenze`.
+                foreach ($operatoriDelPiano as $op) {
+                    $idOp = (int) $op['id'];
+                    if (in_array($idOp, $idEsclusi, true)) {
+                        $this->ricalcolo->ricalcola($idOp, $anno, $mese);
+                    }
                 }
 
                 return $idPiano;
@@ -348,6 +356,23 @@ final class PianiTurnoController extends BaseController
             $assenzeByOp[(int) $a['id_operatore']][] = $a;
         }
 
+        // Operatori nascosti dalla griglia (4-sexies rivista): maternità/aspettativa
+        // che copre l'intero mese. Restano nella tabella saldi (le "ore perdute"
+        // non spariscono) ma non hanno righe assegnabili nel calendario. Il motivo
+        // (descrizione del tipo: "Maternità"/"Aspettativa") etichetta la riga saldo.
+        $motivoByOp = [];
+        foreach ($this->assenze->listEsclusioniConTipoNelMese($anno, $mese) as $r) {
+            $motivoByOp[(int) $r['id_operatore']] = (string) $r['tipo_descrizione'];
+        }
+        $nascostiGriglia = [];
+        $nascostiMotivo = [];
+        foreach ($idOperatori as $idOp) {
+            if (isset($motivoByOp[$idOp])) {
+                $nascostiGriglia[] = $idOp;
+                $nascostiMotivo[$idOp] = $motivoByOp[$idOp];
+            }
+        }
+
         $puoModificare = $this->ruoloPuoModificare();
         $bozza = $piano['stato'] === 'bozza';
 
@@ -363,6 +388,8 @@ final class PianiTurnoController extends BaseController
             'turniByOpData'        => $turniByOpData,
             'crossSettingByOpData' => $crossSettingByOpData,
             'assenzeByOp'          => $assenzeByOp,
+            'nascostiGriglia'      => $nascostiGriglia,
+            'nascostiMotivo'       => $nascostiMotivo,
         ]);
     }
 
