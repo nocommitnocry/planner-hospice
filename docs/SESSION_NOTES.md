@@ -876,12 +876,47 @@ Fix (commit `554bcab`):
 - **Larghezze colonne → classi** `.w-*` in `app.css`. **Zero `style=` inline** rimasti nei template.
 - **Migration `0008` + `schema.sql`**: palette canonica. `G` (coordinatrice) e `DV` erano `#FFFFFF` (invisibili) → oro/celeste; M/P/N/S/F allineati (il seed originale aveva M/P bianchi).
 
+### Rifiniture del 2026-05-24 (sera) — ore dovute default + colore/enfasi weekend
+
+Partite da due osservazioni di Olga sullo screenshot del piano Giugno 2026 (4 operatori, bozza).
+
+1. **`ore_dovute` = 165 uguale per tutti.** Non è un bug di calcolo: il saldo legge `ore_contrattuali_mensili` del singolo operatore (`PianiTurnoController:187`), e tutti hanno il default. Il monte-ore mensile fisso è **voluto** (convenzione CCNL full-time, deciso da Olga). Sistemato però il **default duplicato** in `OperatoreValidator:69`: era l'literal `'165'`, ora legge `Config::get('organization.ore_contrattuali_default', 165)` — così cambiare il config si propaga. *(Resta non differenziato part-time/COORD: non un bug, è il campo per-operatore.)*
+
+2. **Celle weekend non colorate.** Le colonne sab/dom ignoravano il colore del tipo turno: i turnisti lavorano nel weekend, quindi è un bug visivo. Causa: `show.twig:162` aggiunge la classe `.weekend`, e `.calendario-piano .weekend` (specificità 0,2,0) col suo `background-color` vinceva su `.tt-bg-{id}` (0,1,0). Fix in `public/css/app.css`:
+   - tinta grigia weekend ristretta a `.weekend:not([class*="tt-bg-"])` → vale solo sulle celle **senza** turno (vuote/cross/assenza/fuori-finestra); le celle con turno mostrano il colore come i feriali (incluse le `R` della coordinatrice — confermato ok da Olga);
+   - aggiunta **enfasi "a penna"** richiesta per retrocompatibilità col cartaceo: `border-left/right: 2px solid #adb5bd` su `.weekend` (intestazione inclusa, la `<th>` ha la classe → linea continua per tutta la colonna). Bordi, non sfondo, così non coprono il colore; con `border-collapse` i lati di sab|dom si fondono.
+   - Vale identico per Hospice e UCP-DOM (il flag `g.weekend` è solo data, `PianiTurnoController:604`, non dipende dal setting).
+   - Solo CSS, nessun template toccato → si vede con hard-reload (Ctrl+Shift+R).
+
+### Split notte a cavallo dei mesi — FATTO il 2026-05-24 (gap #1)
+
+«Le ore seguono il calendario» (Soluzione 2): una notte attraversa la mezzanotte, quindi una notte iniziata l'ultimo giorno del mese ha la coda mattutina che appartiene al mese successivo. Prima le 10,75h cadevano tutte sul giorno d'inizio → a fine mese i totali non quadravano. Olga (richiesta esplicita: «i totali del mese devono quadrare»).
+
+- **Regola decisa (Olga, 24/05)**: split **3,25 / 7,50**. Giorno d'inizio = 3h serali (21:00→00:00) + 0,25 vestizione. Giorno dopo (smonto) = 7,50h mattutine (00:00→07:30). La griglia resta invariata: `N` visibile sul giorno d'inizio, `S` smonto esplicito a 0h/riposo il giorno dopo («lo smonto esplicito è un bene»). Lo split vive **solo nel saldo**, non sposta ore sulla `S`.
+- **Modello mentale (cartaceo di Olga)**: giorno d'entrata segnato `N`, smonto `R`, sottinteso che ci sono 7,50h lavorate il mattino → quelle ore sono del giorno di smonto (mese successivo). Coerente con lo split «always»: il giorno d'inizio mostra solo la quota serale, il mattino è del mese dopo.
+- **Drift dati corretto (migration `0009`)**: il DB live aveva `N 21:00→00:00` + `S 00:00→07:30`; il seed `schema.sql` invece `N 21:00→07:30` + `S` senza orari. Stesse ore (10,75 su N, 0 su S), diversa descrizione oraria. Lo split legge la coda da `tipi_turno.ora_fine`: con `N` che «finisce a 00:00» calcolava 0 → non spaccava. `0009` riallinea il DB live al seed (`N→07:30`, `S→NULL/NULL`). Un install fresco da `schema.sql` è già a posto. **Va applicata al DB di Olga** (le migrazioni si applicano a mano). Nessun ricalcolo deriva le ore dalla durata (verificato: il generatore usa `schema_passi.ore_lavorate`), quindi cambiare gli orari è sicuro.
+- **Codice**:
+  - `TurnoModel`: `ora_inizio`/`ora_fine` aggiunti a `listByOperatoreInMese`; nuovo `findByOperatoreData(idOp, data)` (cross-setting, 0/1 riga) per il lookback all'ultimo giorno del mese precedente.
+  - `SaldoRicalcoloService::ricalcolaMese`: per un turno lavorato che attraversa la mezzanotte (`ora_inizio > ora_fine`) e cade sull'ultimo giorno del mese conta solo la quota serale (`ore − coda`); aggiunge la coda (`orePostMezzanotte` = `ora_fine` in ore) di una notte iniziata l'ultimo giorno del mese **precedente**. Helper `orePostMezzanotte`, `oreDaTime`, `eLavorato`. Fallback `ore_effettive ?? ore_conteggiate` preservato.
+  - `SaldoRicalcoloService::ricalcola`: ora ri-somma anche il **mese successivo** (ore + saldo) prima di propagare i progressivi — il suo `ore_lavorate` dipende dalla notte di fine di questo mese. Idempotente per i mesi senza notti a cavallo. Senza saldo del mese dopo: comportamento invariato.
+- **Edge «ultimo mese tracciato»**: split «always» → se il mese successivo non è ancora pianificato, la coda di 7,50h non ha dove andare (è del mese dopo, non ancora tracciato). Coerente col modello di Olga, non è una perdita: appena si genera il mese dopo, il suo lookback la recupera.
+- **Verifica (transazione + rollback, 24/05, op8 Bruni che ha `N` sia il 31/5 sia il 30/6)**: maggio −7,50 (cede al giugno), giugno ±0 (riceve dal 31/5, cede al 30/6), luglio +7,50 (riceve dal 30/6). **Totale conservato 232,00 → 232,00.** Notti interne al mese e turni diurni intatti. Anche `N` con `ore_effettive=NULL` (31/5) splitta via fallback.
+
+### Fix messaggio "da assegnare a mano" fuorviante — 2026-05-24 (gap nuovo)
+
+Olga, generando **giugno**: il riepilogo elencava *«Da assegnare a mano: Rossi Mario (ciclo interrotto da assenza > 2 giorni dal 28/06/2026 — completa a mano)»*, ma le sue ferie sono **28/06→02/07**: a giugno i giorni 28-30 sono tutti dentro l'assenza (overlay), **niente celle scoperte**. Il `popolaCiclico` si ferma sì al 28/06 (assenza >2gg) e ritorna `interrottoDa`, ma in `genera()` quel flag finiva **sempre** in `manuali`, senza verificare se restassero giorni davvero scoperti nel mese.
+
+- **Fix** (`GeneratoreService::genera`): l'operatore va in `manuali` per ciclo-interrotto **solo se** `giorniScopertiDa(...) > 0` — giorni dal punto d'interruzione in poi, nel mese generato, non coperti da assenza né da turno cross-setting. Nuovo helper `giorniScopertiDa`. Il messaggio ora include il conteggio («— N giorni scoperti»).
+- **Effetto**: generando **giugno** Rossi compare solo in «popolati» (27 turni, 1→27); la copertura manuale emerge generando **luglio** (stop al 01/07 → **29 giorni scoperti**), dove serve davvero. Confermata l'intuizione di Olga: l'interruzione è pertinente a luglio, non a giugno.
+- **Verifica (reflection sui dati reali di Rossi)**: giugno→0 scoperti (no flag), luglio→29, controprova ferie 25-27/06→3.
+- **Perché abbandona invece di riprendere (DECISO, Olga 24/05): per design.** Il «29 giorni scoperti» a luglio nasce dalla regola >2gg che **abbandona tutto il resto del mese** dopo l'assenza, e va bene così. Motivo di reparto: con un'assenza lunga (peggio a luglio, con più operatori in ferie) ci saranno comunque molti cambi turno per coprire; far proseguire il ciclo automaticamente aggiungerebbe solo caos da disfare a mano. Le **celle bianche fanno da jolly**: la coordinatrice le riempie a mano, senza carico visivo extra, finché il piano non riprende una cadenza regolare. Quindi NON far «riprendere il ciclo dopo la fine dell'assenza»: sarebbe rumore. Vedi [[project-automazioni-popolamento]].
+
 ### Gap residui (sequenza spec §8, da fare)
 
-1. **Soluzione 2 (split notte tra i mesi)** non implementata nel `SaldoRicalcoloService` — le ore di N vanno tutte alla data di inizio. Impatta solo le notti a cavallo di fine mese (marginale per la demo).
+1. ~~**Soluzione 2 (split notte tra i mesi)**~~ — ✅ **RISOLTO il 2026-05-24** (vedi sotto «Split notte a cavallo dei mesi»). Split 3,25/7,50 in `SaldoRicalcoloService` + migration `0009`.
 2. **`log_modifiche`** — `genera()` logga solo nel file applicativo, non in `log_modifiche` con metadata come da spec §5.
 3. **Tassonomia `/tipi-turno`** radio Lavoro/Assenza (rinviata dalla 5) — ancora aperta.
-4. **Seed `schema.sql` incompleto**: `DV` e `MAT` esistono nel DB ma non nel seed (un install nuovo non li avrebbe). `Ms/Ps/Ns` nel seed vs `MS/PS/NS` nel DB (case). Da riconciliare.
+4. **Seed `schema.sql` incompleto**: `DV` e `MAT` esistono nel DB ma non nel seed (un install nuovo non li avrebbe). `Ms/Ps/Ns` nel seed vs `MS/PS/NS` nel DB (case). Da riconciliare. *(Nota 24/05: la migration `0009` ha riconciliato gli orari `N`/`S` — un'altra faccia di questo drift. Il resto resta aperto.)*
 5. Cosmetico: 404 source-map `bootstrap.min.css.map` in console (solo dev-tools, innocuo).
 
 ### ✅ Nodo risolto il 2026-05-24 — regola di conteggio ore-assenza per schemi CICLICI

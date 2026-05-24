@@ -176,13 +176,24 @@ final class GeneratoreService
             // manuale (decisione 2026-05-24). L'operatore può comparire sia in
             // "popolati" (turni pre-assenza) sia qui con la nota di rientro.
             if ($interrottoDa !== null) {
-                $manuali[] = [
-                    'operatore' => $nome,
-                    'motivo' => sprintf(
-                        'ciclo interrotto da assenza > 2 giorni dal %s — completa a mano garantendo la copertura',
-                        (new DateTimeImmutable($interrottoDa))->format('d/m/Y'),
-                    ),
-                ];
+                // Il ciclo si è fermato all'assenza lunga. Segnaliamo la copertura
+                // manuale SOLO se restano giorni davvero scoperti in QUESTO mese
+                // dopo l'interruzione. Se l'assenza arriva fino a fine mese (es.
+                // ferie 28/06→02/07 mentre si genera giugno), i giorni 28-30 sono
+                // tutti coperti dall'assenza: non c'è nulla da fare ora. I giorni
+                // scoperti emergeranno generando il mese successivo (luglio), dove
+                // i giorni dopo l'assenza restano vuoti.
+                $scoperti = $this->giorniScopertiDa($giorni, $interrottoDa, $idOp, $mappaAssenze, $occupate);
+                if ($scoperti > 0) {
+                    $manuali[] = [
+                        'operatore' => $nome,
+                        'motivo' => sprintf(
+                            'ciclo interrotto da assenza > 2 giorni dal %s — %d giorni scoperti, completa a mano garantendo la copertura',
+                            (new DateTimeImmutable($interrottoDa))->format('d/m/Y'),
+                            $scoperti,
+                        ),
+                    ];
+                }
             } elseif ($creati === 0) {
                 $manuali[] = ['operatore' => $nome, 'motivo' => 'nessuna cella disponibile (assenze/turni già presenti)'];
             }
@@ -476,6 +487,33 @@ final class GeneratoreService
     private function isOccupato(array $occupate, int $idOp, string $data): bool
     {
         return in_array($data, $occupate[$idOp] ?? [], true);
+    }
+
+    /**
+     * Quanti giorni del mese, dal punto di interruzione del ciclo in poi, restano
+     * effettivamente SCOPERTI: non coperti da un'assenza né da un turno già
+     * presente (cross-setting). Serve a non segnalare copertura manuale quando
+     * l'assenza lunga si estende fino a fine mese (0 giorni scoperti → il ciclo
+     * si è fermato ma in questo mese non c'è nulla da completare; la copertura
+     * servirà nel mese successivo).
+     *
+     * @param list<string> $giorni            giorni del mese in Y-m-d
+     * @param array<int, list<array{inizio:string, fine:string}>> $mappaAssenze
+     * @param array<int, list<string>> $occupate
+     */
+    private function giorniScopertiDa(array $giorni, string $da, int $idOp, array $mappaAssenze, array $occupate): int
+    {
+        $n = 0;
+        foreach ($giorni as $data) {
+            if ($data < $da) {
+                continue; // prima dell'interruzione: già gestito dal ciclo
+            }
+            if ($this->isAssente($mappaAssenze, $idOp, $data) || $this->isOccupato($occupate, $idOp, $data)) {
+                continue; // coperto: assenza o turno in altro piano
+            }
+            $n++;
+        }
+        return $n;
     }
 
     /** @return list<string> giorni del mese in Y-m-d */

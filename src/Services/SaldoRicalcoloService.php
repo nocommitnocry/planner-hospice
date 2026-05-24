@@ -90,6 +90,10 @@ final class SaldoRicalcoloService
         $oreFormazione = 0.0;
         $oreMaternita = 0.0;
 
+        // Ultimo giorno del mese (Y-m-d): una notte che cade qui ha la coda
+        // post-mezzanotte nel mese successivo (vedi split sotto).
+        $ultimoGiornoMese = (new \DateTimeImmutable(sprintf('%04d-%02d-01', $anno, $mese)))->format('Y-m-t');
+
         $dateConTurno = [];
         foreach ($this->turni->listByOperatoreInMese($idOperatore, $anno, $mese) as $t) {
             $dateConTurno[] = (string) $t['data']; // giorni coperti: l'assenza non li riconta
@@ -110,7 +114,35 @@ final class SaldoRicalcoloService
             } elseif ((int) $t['is_formazione'] === 1) {
                 $oreFormazione += $ore;
             } else {
-                $oreLavorate += $ore;
+                // Lavorato. "Le ore seguono il calendario" (Soluzione 2): una
+                // notte attraversa la mezzanotte. Se inizia sull'ULTIMO giorno
+                // del mese, la coda post-mezzanotte appartiene al mese dopo
+                // (che la recupera nel suo lookback). Le notti interne al mese
+                // restano intere (i due giorni cadono nello stesso mese, il
+                // totale non cambia).
+                $orePost = $this->orePostMezzanotte($t['ora_inizio'] ?? null, $t['ora_fine'] ?? null, $ore);
+                if ($orePost !== null && (string) $t['data'] === $ultimoGiornoMese) {
+                    $oreLavorate += $ore - $orePost;
+                } else {
+                    $oreLavorate += $ore;
+                }
+            }
+        }
+
+        // Coda di una notte iniziata l'ULTIMO giorno del mese PRECEDENTE: le sue
+        // ore post-mezzanotte ricadono in questo mese. Lo smonto `S` del giorno 1
+        // è a 0h, quindi le ore vanno recuperate da qui. Simmetrico allo split
+        // sopra: insieme conservano l'intera notte tra i due mesi.
+        $ultimoMesePrec = (new \DateTimeImmutable(sprintf('%04d-%02d-01', $anno, $mese)))
+            ->modify('-1 day')->format('Y-m-d');
+        $nottePrec = $this->turni->findByOperatoreData($idOperatore, $ultimoMesePrec);
+        if ($nottePrec !== null && $this->eLavorato($nottePrec)) {
+            $orePrec = $nottePrec['ore_effettive'] !== null
+                ? (float) $nottePrec['ore_effettive']
+                : (float) $nottePrec['ore_conteggiate'];
+            $orePost = $this->orePostMezzanotte($nottePrec['ora_inizio'] ?? null, $nottePrec['ora_fine'] ?? null, $orePrec);
+            if ($orePost !== null) {
+                $oreLavorate += $orePost;
             }
         }
 
@@ -151,7 +183,22 @@ final class SaldoRicalcoloService
         if ($progressivo === null) {
             return;
         }
-        $this->propagaProgressivo($idOperatore, $anno, $mese, $progressivo);
+        // Le ore di una notte sull'ultimo giorno di QUESTO mese ricadono in parte
+        // sul mese successivo: il suo `ore_lavorate` dipende da qui. Quindi
+        // ri-sommiamo anche il mese dopo (ore + saldo) PRIMA di propagare i
+        // progressivi. Idempotente per i mesi senza notti a cavallo. Il mese+2 in
+        // avanti dipende solo dalla notte di fine del mese+1 (non toccata da qui),
+        // quindi alla catena successiva basta la propagazione del progressivo.
+        $succ = (new \DateTimeImmutable(sprintf('%04d-%02d-01', $anno, $mese)))->modify('+1 month');
+        $annoSucc = (int) $succ->format('Y');
+        $meseSucc = (int) $succ->format('n');
+        $progSucc = $this->ricalcolaMese($idOperatore, $annoSucc, $meseSucc);
+        if ($progSucc === null) {
+            // Nessun saldo per il mese successivo: comportamento invariato.
+            $this->propagaProgressivo($idOperatore, $anno, $mese, $progressivo);
+            return;
+        }
+        $this->propagaProgressivo($idOperatore, $annoSucc, $meseSucc, $progSucc);
     }
 
     /**
@@ -235,6 +282,46 @@ final class SaldoRicalcoloService
             ]);
             $progPrec = $nuovoProg;
         }
+    }
+
+    /** True se il turno è di lavoro (nessun flag riposo/assenza). */
+    private function eLavorato(array $turno): bool
+    {
+        return (int) $turno['is_riposo'] === 0
+            && (int) $turno['is_ferie'] === 0
+            && (int) $turno['is_permesso'] === 0
+            && (int) $turno['is_malattia'] === 0
+            && (int) $turno['is_formazione'] === 0;
+    }
+
+    /**
+     * Ore di un turno che cadono DOPO la mezzanotte (cioè nel giorno solare
+     * successivo a quello d'inizio). Ritorna null se il turno NON attraversa la
+     * mezzanotte — orari mancanti (ferie, permessi: TIME NULL) o `ora_fine`
+     * non precedente a `ora_inizio` — nel qual caso non c'è nulla da spostare
+     * tra i mesi.
+     *
+     * La coda = `ora_fine` espressa in ore (es. 07:30 → 7,5). L'eventuale extra
+     * (vestizione: `ore` > durata oraria) resta implicitamente sul giorno
+     * d'inizio, perché lo split di chi chiama fa `ore - coda`. Limitata a `$ore`
+     * per non andare mai in negativo su dati incoerenti.
+     */
+    private function orePostMezzanotte(?string $oraInizio, ?string $oraFine, float $ore): ?float
+    {
+        if ($oraInizio === null || $oraFine === null) {
+            return null;
+        }
+        if (strcmp((string) $oraInizio, (string) $oraFine) <= 0) {
+            return null; // ora_fine >= ora_inizio: turno nello stesso giorno
+        }
+        return min($this->oreDaTime((string) $oraFine), $ore);
+    }
+
+    /** "HH:MM:SS" → ore decimali (07:30:00 → 7.5). */
+    private function oreDaTime(string $time): float
+    {
+        [$h, $m, $s] = array_pad(explode(':', $time), 3, '0');
+        return (int) $h + ((int) $m) / 60.0 + ((int) $s) / 3600.0;
     }
 
     private function fmt(float $v): string

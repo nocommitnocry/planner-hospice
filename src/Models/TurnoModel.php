@@ -129,6 +129,8 @@ final class TurnoModel extends BaseModel
         $sql = "SELECT t.data,
                        t.ore_effettive,
                        tt.ore_conteggiate,
+                       tt.ora_inizio,
+                       tt.ora_fine,
                        tt.is_riposo,
                        tt.is_ferie,
                        tt.is_permesso,
@@ -142,6 +144,38 @@ final class TurnoModel extends BaseModel
             'id_op'  => $idOperatore,
             'primo'  => $primo,
             'ultimo' => $ultimo,
+        ]);
+    }
+
+    /**
+     * Il turno (cross-setting) di un operatore in una data precisa, con gli orari
+     * e i flag del tipo. L'UNIQUE (operatore, data) è globale → 0 o 1 riga.
+     *
+     * Serve a `SaldoRicalcoloService` per recuperare una notte iniziata l'ultimo
+     * giorno del mese precedente: le sue ore post-mezzanotte ricadono nel mese
+     * corrente ("le ore seguono il calendario"). Stessa proiezione di
+     * `listByOperatoreInMese`.
+     */
+    public function findByOperatoreData(int $idOperatore, string $data): ?array
+    {
+        $sql = "SELECT t.data,
+                       t.ore_effettive,
+                       tt.ore_conteggiate,
+                       tt.ora_inizio,
+                       tt.ora_fine,
+                       tt.is_riposo,
+                       tt.is_ferie,
+                       tt.is_permesso,
+                       tt.is_malattia,
+                       tt.is_formazione
+                FROM turni t
+                JOIN tipi_turno tt ON tt.id = t.id_tipo_turno
+                WHERE t.id_operatore = :id_op
+                  AND t.data = :data
+                LIMIT 1";
+        return $this->db->queryOne($sql, [
+            'id_op' => $idOperatore,
+            'data'  => $data,
         ]);
     }
 

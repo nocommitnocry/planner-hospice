@@ -51,7 +51,24 @@ footer {
 .calendario-piano thead th {
     background-color: #f8f9fa;
 }
+/* Colonne weekend (sab/dom) — due trattamenti distinti:
+
+   1) Linee verticali ai lati di OGNI cella weekend, intestazione inclusa
+      (la <th> ha anch'essa la classe .weekend): enfasi "a penna" che la
+      coordinatrice usava sul cartaceo. Sono BORDI, non sfondo, quindi il
+      colore del tipo turno resta visibile sotto. Con border-collapse i bordi
+      adiacenti di sab|dom si fondono in un'unica linea.
+
+   2) Tinta grigia tenue SOLO sulle celle senza turno colorato (vuote, cross,
+      assenza, fuori-finestra). I turnisti lavorano nel weekend: una cella con
+      turno (.tt-bg-{id}) deve mostrare il colore come negli altri giorni.
+      Senza il :not, questa regola (0,2,0) vincerebbe su .tt-bg (0,1,0) e
+      ridipingerebbe di grigio i turni del weekend. */
 .calendario-piano .weekend {
+    border-left: 2px solid #adb5bd;
+    border-right: 2px solid #adb5bd;
+}
+.calendario-piano .weekend:not([class*="tt-bg-"]) {
     background-color: #fafafa;
 }
 

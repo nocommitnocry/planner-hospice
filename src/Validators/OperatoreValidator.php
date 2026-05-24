@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace App\Validators;
 
+use App\Helpers\Config;
+
 final class OperatoreValidator extends BaseValidator
 {
     /**
@@ -66,7 +68,8 @@ final class OperatoreValidator extends BaseValidator
             }
         }
 
-        $oreRaw = $input['ore_contrattuali_mensili'] ?? '165';
+        $oreDefault = (string) Config::get('organization.ore_contrattuali_default', 165);
+        $oreRaw = $input['ore_contrattuali_mensili'] ?? $oreDefault;
         $oreRaw = str_replace(',', '.', (string) $oreRaw);
         if ($err = Rules::decimal($oreRaw, 'Ore contrattuali mensili')) {
             $errors['ore_contrattuali_mensili'][] = $err;
