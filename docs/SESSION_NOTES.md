@@ -932,3 +932,60 @@ La parte **aperta**: per un'assenza pluri-giorno su schema **ciclico** (Hospice 
 - La spec §3 dice "ogni assenza conta quanto la posizione di schema di quel giorno" + "la posizione si congela": applicato alla lettera, tutti i giorni del blocco cadrebbero sulla posizione congelata (es. Rossi: 5 gg ferie tutti contati come N = 52,5h → sovrastima).
 - Alternative emerse: (A) la posizione **avanza** nel conteggio (mix realistico, ~25,5h per 5 gg); (B) **schema ferie fisso** = template `M M P N S R` dal 1° giorno del blocco (ciclo pieno = 33,25h).
 - **Da decidere con Olga** prima di scrivere `SchemaOreService`. Trascrivere la decisione qui e in `project-conteggio-ore-assenze`.
+
+---
+
+## Sessione 7 — 2026-05-25 — Assenze come fonte unica + «assegna turno» per setting + correzioni dominio
+
+Nata dal test del primo giro reale (aprile inserito a mano → maggio generato). Oltre a un'analisi del generatore (vedi sotto), Olga ha proposto due cambiamenti e segnalato tre correzioni di dominio.
+
+### Analisi del generatore (aprile reale vs maggio generato)
+
+Confronto su dati reali (piano 41 Hospice aprile pubblicato, 488 turni; piano 42 maggio bozza, 527 turni). La **continuazione ciclica è corretta** (gli operatori-ancora ripartono in fase esatta). Emerso un limite: il generatore prosegue la fase di ogni operatore **senza guardare la copertura aggregata**. Aprile reale: copertura lavoro/giorno min 7, max 10 (le coordinatrici la livellano a mano). Maggio generato: min 7, **max 14**, con **onda a 6 giorni** (10‑13‑14‑12‑8‑7…) perché tutti i ciclici hanno periodo 6 e le fasi si ammassano (distribuzione 5/3/1/1/2/4 invece di ~2,7 per fase, ereditata da aprile). Idee registrate per dopo (NON implementate): (1) report di copertura non bloccante post-generazione; (2) flag "bassa confidenza" per chi aveva pochi turni regolari il mese prima; (3) ri-fasatura solo per chi non ha continuità. Vedi [[project-automazioni-popolamento]].
+
+### Cambiamenti implementati
+
+- **Assenze = fonte unica di verità.** Le assenze si gestiscono solo da `/assenze` e **non compaiono più in «assegna turno»**. Nuovo `TipoTurnoModel::listSoloLavoro(?int $idSetting)` (complemento dei 4 flag-assenza, solo `attivo=1`, setting del piano o NULL=condiviso); `R`/`S` restano (non sono assenze); `Corso` resta lato lavoro. `TurniController::edit` usa `listSoloLavoro($piano['id_setting'])`. Difesa in profondità: `tipoAssegnabileNelPiano()` rifiuta lato server (store **e** update) un tipo assenza, ritirato o di altro setting (il filtro nel form è aggirabile via URL).
+- **Svuotamento automatico alla creazione/modifica assenza.** `AssenzeController::store/update/destroy` ora in transazione: i turni dell'operatore che cadono nel periodo vengono **eliminati su TUTTI i piani** (cross-setting, l'`UNIQUE` op-data è globale) e i saldi dei mesi toccati ricalcolati. Le celle restano vuote → l'overlay `.cella-in-assenza` mostra già il codice (niente righe-turno fittizie). **Reversal esplicito** della decisione di sessione 5 ("niente cleanup automatico, decide la coordinatrice"). Nuovi `TurnoModel::listByOperatoreInPeriodo` / `deleteByIds`. I mesi si ricalcolano in ordine crescente (la propagazione del progressivo va avanti). `destroy` non ripristina i turni (sono spariti): ricalcola solo per togliere le ore-assenza. `update` gestisce anche cambio periodo (vecchi ∪ nuovi mesi) e cambio operatore.
+- **Piani pubblicati toccati → avviso.** Se lo svuotamento tocca un piano pubblicato, flash giallo «ho aggiornato anche piani PUBBLICATI (…)» + log. Scelta di Olga: l'assenza è verità esterna e vince, ma senza svuotamenti silenziosi (risparmia il giro «riporta in bozza»).
+- **«Assegna turno» filtrato per setting.** `tipi_turno.id_setting` (NULL=entrambi): Hospice vede M/P/N/S/G + straordinari, UCP-DOM vede UI/UO; R/Rec/Corso e tutte le assenze sono condivisi.
+- **Prestiti Hospice → UCP-DOM puliti.** Si gestiscono aggiungendo l'operatore «in prestito» al piano UCP-DOM (4-ter) con i codici propri UCP-DOM; in Hospice compaiono in overlay cross-setting (4-quater). I codici impropri `D` (Domicilio, 47 turni storici in aprile) → **ritirato** (`attivo=0`, aprile resta leggibile) e `DV` (inutilizzato) → **cancellato**. Niente più marcatura del prestito nel piano Hospice.
+- **Ore UCP-DOM assegnate a mano (fix).** Le ore di UI/UO variano per giorno (UI venerdì 6h, UO sabato 4,25h) e quei valori vivono in `schema_passi`: il generatore li scriveva in `turni.ore_effettive`, ma l'assegnazione **manuale** no → ricadeva su `ore_conteggiate` costante (8 / 7,25). Nuovo `SchemaPassoModel::oreLavorateSettimanale(idTipo, dow)`; `TurniController` (`store`+`update`) imposta `ore_effettive` da lì (NULL per i tipi ciclici/costanti → fallback corretto). Bonus: `update` ora ricalcola `ore_effettive` quando cambia il tipo (prima restava stantio).
+- **Vestizione — assunto corretto.** +0,25h SOLO sui turni davvero al lavoro in Hospice: `M, MS, P, PS, N, NS, G` (estesa ai 3 straordinari). UCP-DOM (UI/UO) non ha vestizione. Le assenze sono accreditate base (− vestizione): **già corretto nel DB e nel codice** (`schema_passi.ore_assenza` = base, `SchemaOreService` legge quella). L'allarme nasceva da un valore citato per errore in chat, non da un bug. Vedi [[project-conteggio-ore-assenze]].
+
+### Migration 0010 (`0010_tipi_turno_setting_attivo.sql`) — applicata da Olga il 2026-05-25
+
+`tipi_turno.attivo` (soft-disable, come operatori/utenti) + `tipi_turno.id_setting` (FK setting, NULL=entrambi). Seed pertinenza: Hospice = M/P/N/S/G/MS/PS/NS, UCP-DOM = UI/UO, resto NULL. Ritiro `D` (`attivo=0`), cancellazione `DV`. `schema.sql` allineato (collation `utf8mb4_unicode_ci` case-insensitive → gli UPDATE per codice matchano anche `Ms/Ps/Ns` del seed driftato).
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Assenze in «assegna turno» | **Fuori**: fonte unica `/assenze`. La griglia mostra solo tipi-lavoro del setting. Difesa server-side oltre al filtro UI |
+| Svuotamento turni su assenza | **Sì, automatico** (reversal della 5). Cross-setting, in transazione, con ricalcolo. Celle vuote → overlay. Niente righe-turno fittizie |
+| Piani pubblicati | Svuotati anche loro, con **avviso + log**. L'assenza è verità esterna; nessuno svuotamento silenzioso |
+| Periodo ridotto/spostato in update | I giorni usciti dal periodo **non** si auto-riempiono (restano `+`). Prevedibile |
+| Suddivisione setting dei tipi | `tipi_turno.id_setting` NULL=entrambi. Niente molti-a-molti (i condivisi stanno bene come NULL) |
+| Prestito Hospice→UCP-DOM | Via «in prestito» nel piano UCP-DOM + overlay in Hospice. `D`/`DV` non servono più → ritirato/cancellato. «Diviso 2» non necessario: l'`UNIQUE` op-data globale esclude il doppio conteggio |
+| `D` con storico | **Soft-disable** (non hard-delete): aprile resta leggibile, FK RESTRICT non toccata |
+| Corso (`C`) | Resta tipo di **lavoro** (assegnabile), 7,50 fisse (giornata − vestizione), bucket formazione |
+| Ore UCP-DOM manuali | `ore_effettive` dal passo settimanale (UI ven 6h, UO sab 4,25h). Lookup univoco: UI solo in `ucpdom_infermieri`, UO solo in `ucpdom_oss` |
+
+### Verifiche (transazione + rollback, dati reali, 2026-05-25)
+
+| Comportamento | Esito |
+|---|---|
+| `listSoloLavoro(hospice)` = M/P/N/S/R/G/MS/PS/NS/Rec/C; `(ucp_dom)` = UI/UO/Rec/R/C; `D` assente ovunque | ✅ |
+| Assenza F 3 gg a maggio: turni periodo 3→0, ore_lavorate −26,5, ore_ferie 0→22,75 (da_schema base), rollback pulito | ✅ |
+| Rilevamento piano PUBBLICATO (periodo in aprile → stato=pubblicato) | ✅ |
+| `oreLavorateSettimanale`: UI ven=6,00, UI lun=8,00, UO sab=4,25, M=NULL (fallback) | ✅ |
+| Edit tipo turno (admin) non azzera `attivo`/`id_setting` (`update` tocca solo le chiavi presenti) | ✅ (verificato su `BaseModel`) |
+
+Test browser di Olga (admin/caposala): **tutto ok** (2026-05-25).
+
+### Punti aperti / rinviati
+
+- **Ottimizzazione copertura del generatore** (report non bloccante, flag bassa-confidenza, ri-fasatura mirata): identificati, non implementati.
+- **Badge "ritirato"** accanto a `D` nella lista admin `/tipi-turno`: proposto, non fatto (la lista admin usa `listOrdered` che mostra tutti, anche i ritirati, senza marcatore).
+- **Gap #4 (drift seed)** ancora aperto: `schema.sql` ha `Ms/Ps/Ns` minuscoli con ore base e manca `MAT`; il DB live ha `MS/PS/NS` con vestizione e `MAT`. La 0010 non lo ha toccato.
+- Tassonomia `/tipi-turno` radio Lavoro/Assenza: ancora rinviata (ora meno urgente, la separazione UI è di fatto fatta via i flag derivati).

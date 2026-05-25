@@ -159,8 +159,12 @@ CREATE TABLE IF NOT EXISTS tipi_turno (
     is_formazione BOOLEAN NOT NULL DEFAULT FALSE,
     esclude_pianificazione BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Se 1, gli operatori con assenza di questo tipo che copre l''intero mese non vengono fotografati nel piano (es. maternita)',
     schema_ore ENUM('da_schema', 'maternita_8_6_0', 'zero') NOT NULL DEFAULT 'da_schema' COMMENT 'Regola di conteggio ore quando il tipo e'' un''assenza: da_schema | maternita_8_6_0 (8/6/0) | zero',
+    attivo BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'Soft-disable: se 0 il tipo non e'' assegnabile (resta per i turni storici)',
+    id_setting INT NULL COMMENT 'Setting di pertinenza per "assegna turno"; NULL = entrambi',
     creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_tipo_setting FOREIGN KEY (id_setting)
+        REFERENCES setting(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
@@ -414,6 +418,16 @@ INSERT INTO tipi_turno
     ('EL', 'Permesso elettorale',    NULL, NULL, '#D0D0F0', 7.50, 62, 0,0,1,0,0,0, 'da_schema'),
     -- Aspettativa: nasconde se mese intero (esclude_pianificazione) e conta 0 (deficit visibile)
     ('ASP','Aspettativa',            NULL, NULL, '#CCCCCC', 0.00, 65, 0,0,0,0,0,1, 'zero');
+
+-- Pertinenza setting dei tipi di LAVORO (assenze + R/Rec/C restano NULL = entrambi).
+-- Collation case-insensitive: 'MS' matcha anche 'Ms'/'Ps'/'Ns' del seed sopra.
+UPDATE tipi_turno SET id_setting = (SELECT id FROM setting WHERE codice = 'hospice')
+    WHERE codice IN ('M', 'P', 'N', 'S', 'G', 'MS', 'PS', 'NS');
+UPDATE tipi_turno SET id_setting = (SELECT id FROM setting WHERE codice = 'ucp_dom')
+    WHERE codice IN ('UI', 'UO');
+-- 'D' (Domicilio) ritirato: i prestiti Hospice->UCP-DOM usano i codici UCP-DOM (UI/UO).
+-- ('DV' non e' nel seed: viene rimosso solo dal DB live via migration 0010.)
+UPDATE tipi_turno SET attivo = 0 WHERE codice = 'D';
 
 -- -----------------------------------------------------------------------------
 -- Schemi di turnazione concreti (6: 4 Hospice + 2 UCP-DOM) e relativi passi

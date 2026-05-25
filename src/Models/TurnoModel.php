@@ -207,4 +207,47 @@ final class TurnoModel extends BaseModel
         }
         return $map;
     }
+
+    /**
+     * Turni di un operatore nel periodo [inizio, fine] su QUALSIASI piano
+     * (l'UNIQUE op-data è globale → cross-setting). Porta stato/anno/mese del
+     * piano e il nome del setting, così il chiamante sa quali mesi ricalcolare e
+     * quali piani PUBBLICATI sono stati toccati. Usato da AssenzeController per
+     * svuotare i turni che cadono nel periodo di un'assenza appena creata.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listByOperatoreInPeriodo(int $idOperatore, string $inizio, string $fine): array
+    {
+        $sql = "SELECT t.id, t.data, t.id_piano,
+                       p.stato, p.anno, p.mese, p.nome AS piano_nome,
+                       s.nome AS setting_nome
+                FROM turni t
+                JOIN piano_turni p ON p.id = t.id_piano
+                JOIN setting s ON s.id = p.id_setting
+                WHERE t.id_operatore = :id_op
+                  AND t.data BETWEEN :inizio AND :fine
+                ORDER BY t.data";
+        return $this->db->query($sql, [
+            'id_op'  => $idOperatore,
+            'inizio' => $inizio,
+            'fine'   => $fine,
+        ]);
+    }
+
+    /**
+     * Cancella i turni con gli id indicati (batch). Placeholder posizionali per
+     * non riusare i named (regola PDO). Ritorna il numero di righe eliminate.
+     *
+     * @param list<int> $ids
+     */
+    public function deleteByIds(array $ids): int
+    {
+        if ($ids === []) {
+            return 0;
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $sql = "DELETE FROM turni WHERE id IN ({$in})";
+        return $this->db->execute($sql, array_map(static fn ($id) => (int) $id, $ids));
+    }
 }

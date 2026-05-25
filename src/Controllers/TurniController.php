@@ -11,6 +11,7 @@ use App\Models\OperatoreModel;
 use App\Models\PianoOperatoreModel;
 use App\Models\PianoTurnoModel;
 use App\Models\SaldoOreModel;
+use App\Models\SchemaPassoModel;
 use App\Models\TipoTurnoModel;
 use App\Models\TurnoModel;
 use App\Routing\Request;
@@ -46,6 +47,7 @@ final class TurniController extends BaseController
     private SaldoOreModel $saldi;
     private PianoOperatoreModel $pianoOperatori;
     private AssenzaModel $assenze;
+    private SchemaPassoModel $passi;
     private SaldoRicalcoloService $ricalcolo;
     private Database $db;
 
@@ -59,6 +61,7 @@ final class TurniController extends BaseController
         $this->saldi = new SaldoOreModel();
         $this->pianoOperatori = new PianoOperatoreModel();
         $this->assenze = new AssenzaModel();
+        $this->passi = new SchemaPassoModel();
         $this->ricalcolo = new SaldoRicalcoloService($this->saldi, $this->turni);
         $this->db = Container::instance()->get(Database::class);
     }
@@ -116,7 +119,7 @@ final class TurniController extends BaseController
             'operatore'         => $operatore,
             'data'              => $dataTurno,
             'turno'             => $turnoEsistente,
-            'tipi'              => $this->tipi->listOrdered(),
+            'tipi'              => $this->tipi->listSoloLavoro((int) $piano['id_setting']),
             'vincoli'           => $vincoli,
             'fuoriFinestra'     => $fuoriFinestra,
             'inAssenza'         => $inAssenza,
@@ -175,6 +178,7 @@ final class TurniController extends BaseController
                     'id_operatore'  => (int) $data['id_operatore'],
                     'data'          => (string) $data['data'],
                     'id_tipo_turno' => (int) $data['id_tipo_turno'],
+                    'ore_effettive' => $this->oreEffettivePerTurno((int) $data['id_tipo_turno'], (string) $data['data']),
                     'note'          => $data['note'],
                 ]);
                 $this->ricalcolo->ricalcola(
@@ -251,19 +255,21 @@ final class TurniController extends BaseController
         }
         $data = $validation['data'];
 
-        if ($this->tipi->find((int) $data['id_tipo_turno']) === null) {
+        $tipo = $this->tipi->find((int) $data['id_tipo_turno']);
+        if ($tipo === null || !$this->tipoAssegnabileNelPiano($tipo, $piano)) {
             return $this->redirectAlFormEdit(
                 $idPiano,
                 (int) $turno['id_operatore'],
                 (string) $turno['data'],
                 $input,
-                ['id_tipo_turno' => ['Tipo turno non valido.']],
+                ['id_tipo_turno' => ['Questo tipo turno non è assegnabile in questo piano (assenza, tipo ritirato o di un altro setting).']],
             );
         }
 
         $this->db->transaction(function () use ($idTurno, $turno, $piano, $data): void {
             $this->turni->update($idTurno, [
                 'id_tipo_turno' => (int) $data['id_tipo_turno'],
+                'ore_effettive' => $this->oreEffettivePerTurno((int) $data['id_tipo_turno'], (string) $turno['data']),
                 'note'          => $data['note'],
             ]);
             $this->ricalcolo->ricalcola(
@@ -390,11 +396,55 @@ final class TurniController extends BaseController
             }
         }
 
-        if ($this->tipi->find($idTipoTurno) === null) {
+        $tipo = $this->tipi->find($idTipoTurno);
+        if ($tipo === null) {
             $errors['id_tipo_turno'][] = 'Tipo turno non valido.';
+        } elseif (!$this->tipoAssegnabileNelPiano($tipo, $piano)) {
+            $errors['id_tipo_turno'][] = 'Questo tipo turno non è assegnabile in questo piano (assenza, tipo ritirato o di un altro setting).';
         }
 
         return $errors;
+    }
+
+    /**
+     * Un tipo turno è assegnabile da "assegna turno" in questo piano se è
+     * attivo, NON è un'assenza (quelle si gestiscono da /assenze) e appartiene
+     * al setting del piano oppure è condiviso (`id_setting` NULL). Difesa in
+     * profondità: il form mostra già solo i tipi giusti (listSoloLavoro), ma un
+     * submit via URL manipolato deve essere rifiutato comunque.
+     *
+     * @param array<string,mixed> $tipo
+     * @param array<string,mixed> $piano
+     */
+    private function tipoAssegnabileNelPiano(array $tipo, array $piano): bool
+    {
+        if ((int) $tipo['attivo'] !== 1) {
+            return false;
+        }
+        $isAssenza = (int) $tipo['is_ferie'] === 1
+            || (int) $tipo['is_permesso'] === 1
+            || (int) $tipo['is_malattia'] === 1
+            || (int) $tipo['esclude_pianificazione'] === 1;
+        if ($isAssenza) {
+            return false;
+        }
+        if ($tipo['id_setting'] === null) {
+            return true; // condiviso (R, Rec, Corso)
+        }
+        return (int) $tipo['id_setting'] === (int) $piano['id_setting'];
+    }
+
+    /**
+     * Ore effettive da scrivere su un turno assegnato a mano, per i tipi le cui
+     * ore variano per giorno-settimana (UCP-DOM: UI venerdì 6h, UO sabato
+     * 4,25h). Allinea l'assegnazione manuale al generatore, che già scrive
+     * `ore_effettive` dal passo dello schema. Ritorna null per i tipi a ore
+     * costanti (M/P/N/G…): in quel caso il conteggio usa `ore_conteggiate`.
+     */
+    private function oreEffettivePerTurno(int $idTipoTurno, string $data): ?float
+    {
+        $dow = (int) (new \DateTimeImmutable($data))->format('N') - 1; // 0=lun..6=dom
+        return $this->passi->oreLavorateSettimanale($idTipoTurno, $dow);
     }
 
     /**

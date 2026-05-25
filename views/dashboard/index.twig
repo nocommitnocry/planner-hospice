@@ -6,13 +6,15 @@
 <h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
 
 <div class="alert alert-info">
-    <strong>Sessione 5-bis completata.</strong> CRUD vincoli operatori
-    (<code>no_notti</code>, <code>no_weekend</code>, <code>solo_mattine</code>) con
-    set chiuso e tracciabilità dell'autore. Il warning nel form turno è ora una
-    frase parlata leggibile invece del codice tecnico. I vincoli restano <em>non
-    bloccanti runtime</em>: sono input del generatore automatico e suggerimenti
-    per la coordinatrice, derogabili in caso di accordo o carenza di personale.
-    Prossima sessione: 6 (generatore automatico).
+    <strong>Sessione 7 completata.</strong> Le assenze hanno un'unica fonte di
+    verità: si gestiscono solo da <em>Assenze</em> e non compaiono più in «assegna
+    turno», che mostra ora solo i tipi di lavoro pertinenti al setting del piano.
+    Creando o modificando un'assenza i turni nel periodo vengono svuotati e i saldi
+    ricalcolati (anche sui piani pubblicati, con avviso). I prestiti tra setting si
+    gestiscono aggiungendo l'operatore al piano dell'altro setting (overlay nel
+    piano di casa); i codici impropri <code>D</code>/<code>DV</code> sono stati
+    ritirati. Corretto il conteggio delle ore UCP-DOM assegnate a mano (UI venerdì
+    6h, UO sabato 4,25h).
 </div>
 
 <div class="row g-3">

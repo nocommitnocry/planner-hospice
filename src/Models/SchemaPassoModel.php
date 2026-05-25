@@ -61,4 +61,32 @@ final class SchemaPassoModel extends BaseModel
             ['id_schema' => $idSchema, 'posizione' => $posizione]
         );
     }
+
+    /**
+     * Ore lavorate di un tipo turno in un dato giorno-settimana (0=lun..6=dom)
+     * secondo gli schemi SETTIMANALI. Serve all'assegnazione MANUALE dei tipi le
+     * cui ore variano per giorno (UCP-DOM: UI venerdì 6h, UO sabato 4,25h): il
+     * generatore le scrive in `turni.ore_effettive` dal passo, ma un'assegnazione
+     * a mano non le conoscerebbe e ricadrebbe sul `ore_conteggiate` costante.
+     *
+     * Ritorna null se quel tipo non compare in alcuno schema settimanale a quel
+     * giorno (tipi ciclici M/P/N, o weekend senza passo): il chiamante lascia
+     * `ore_effettive = NULL` e il conteggio usa `ore_conteggiate` (corretto per i
+     * tipi a ore costanti). I tipi a ore variabili (UI/UO) stanno ciascuno in un
+     * solo schema settimanale, quindi nessuna ambiguità.
+     */
+    public function oreLavorateSettimanale(int $idTipoTurno, int $dow): ?float
+    {
+        $val = $this->db->queryScalar(
+            "SELECT sp.ore_lavorate
+             FROM {$this->table} sp
+             JOIN schemi_turnazione s ON s.id = sp.id_schema
+             WHERE sp.id_tipo_turno = :tipo
+               AND s.famiglia = 'settimanale'
+               AND sp.posizione = :dow
+             LIMIT 1",
+            ['tipo' => $idTipoTurno, 'dow' => $dow]
+        );
+        return $val !== null ? (float) $val : null;
+    }
 }
