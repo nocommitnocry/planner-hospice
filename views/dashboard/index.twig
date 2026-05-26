@@ -6,15 +6,14 @@
 <h1 class="h3 mb-4">Benvenuta, {{ currentUser.nome }}</h1>
 
 <div class="alert alert-info">
-    <strong>Sessione 7 completata.</strong> Le assenze hanno un'unica fonte di
-    verità: si gestiscono solo da <em>Assenze</em> e non compaiono più in «assegna
-    turno», che mostra ora solo i tipi di lavoro pertinenti al setting del piano.
-    Creando o modificando un'assenza i turni nel periodo vengono svuotati e i saldi
-    ricalcolati (anche sui piani pubblicati, con avviso). I prestiti tra setting si
-    gestiscono aggiungendo l'operatore al piano dell'altro setting (overlay nel
-    piano di casa); i codici impropri <code>D</code>/<code>DV</code> sono stati
-    ritirati. Corretto il conteggio delle ore UCP-DOM assegnate a mano (UI venerdì
-    6h, UO sabato 4,25h).
+    <strong>Sessione 8 completata.</strong> I piani <em>pubblicati</em> hanno un
+    bottone <em>Stampa PDF</em> (A3 orizzontale): la griglia del mese pronta per il
+    cartaceo, con gli operatori raggruppati in Infermieri &rarr; OSS &rarr;
+    Coordinatrice &rarr; Altri e la riga delle date ripetuta sopra ogni gruppo. Il
+    raggruppamento legge il nuovo campo <em>Gruppo di pianificazione</em> delle
+    categorie (modificabile da <em>Categorie operatori</em>). La logica di
+    caricamento della griglia è ora condivisa tra la pagina del piano e la stampa
+    (PianoVistaService). Prima dell'uso applicare la <code>migrazione 0011</code>.
 </div>
 
 <div class="row g-3">

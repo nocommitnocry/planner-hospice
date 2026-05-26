@@ -118,6 +118,7 @@ return function (Router $r): void {
     $r->get('/piani-turno/create',           [PianiTurnoController::class, 'create'],    $adminCaposala, name: 'piani-turno.create');
     $r->post('/piani-turno',                 [PianiTurnoController::class, 'store'],     $adminCaposala, name: 'piani-turno.store');
     $r->get('/piani-turno/{id}',             [PianiTurnoController::class, 'show'],      name: 'piani-turno.show');
+    $r->get('/piani-turno/{id}/pdf',         [PianiTurnoController::class, 'pdf'],       $adminCaposala, name: 'piani-turno.pdf');
     $r->get('/piani-turno/{id}/delete-confirm', [PianiTurnoController::class, 'deleteConfirm'], $adminCaposala, name: 'piani-turno.delete-confirm');
     $r->post('/piani-turno/{id}/delete',     [PianiTurnoController::class, 'destroy'],   $adminCaposala, name: 'piani-turno.destroy');
     $r->post('/piani-turno/{id}/publish',    [PianiTurnoController::class, 'publish'],   $adminCaposala, name: 'piani-turno.publish');

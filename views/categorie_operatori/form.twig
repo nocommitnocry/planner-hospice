@@ -36,6 +36,24 @@
             </div>
 
             <div class="mb-3">
+                <label for="gruppo_pianificazione" class="form-label">Gruppo di pianificazione</label>
+                {% set gruppoSel = old_input.gruppo_pianificazione ?? categoria.gruppo_pianificazione ?? 'altro' %}
+                <select id="gruppo_pianificazione" name="gruppo_pianificazione"
+                        class="form-select{% if form_errors.gruppo_pianificazione %} is-invalid{% endif %}">
+                    {% for valore, etichetta in gruppi %}
+                        <option value="{{ valore }}"{% if gruppoSel == valore %} selected{% endif %}>{{ etichetta }}</option>
+                    {% endfor %}
+                </select>
+                {% if form_errors.gruppo_pianificazione %}
+                    <div class="invalid-feedback">{{ form_errors.gruppo_pianificazione|first }}</div>
+                {% endif %}
+                <div class="form-text">
+                    Determina il raggruppamento nella stampa del piano: Infermieri &rarr; OSS &rarr; Coordinatrice &rarr; Altri.
+                    «Altri» se la categoria non è una di queste figure.
+                </div>
+            </div>
+
+            <div class="mb-3">
                 <label for="ordine_visualizzazione" class="form-label">Ordine di visualizzazione</label>
                 <input type="number" id="ordine_visualizzazione" name="ordine_visualizzazione"
                        min="0" max="9999"

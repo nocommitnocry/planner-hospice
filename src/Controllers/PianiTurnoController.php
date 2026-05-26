@@ -19,6 +19,9 @@ use App\Models\VincoloOperatoreModel;
 use App\Routing\Request;
 use App\Routing\Response;
 use App\Services\GeneratoreService;
+use App\Services\PianoNonStampabileException;
+use App\Services\PianoPdfService;
+use App\Services\PianoVistaService;
 use App\Services\SaldoRicalcoloService;
 use App\Validators\PianoTurnoValidator;
 use PDOException;
@@ -50,6 +53,8 @@ final class PianiTurnoController extends BaseController
     private AssenzaModel $assenze;
     private SaldoRicalcoloService $ricalcolo;
     private GeneratoreService $generatore;
+    private PianoVistaService $vista;
+    private PianoPdfService $pdf;
     private Database $db;
 
     private const MESI_IT = [
@@ -80,6 +85,8 @@ final class PianiTurnoController extends BaseController
             $this->assenze,
             $this->ricalcolo,
         );
+        $this->vista = new PianoVistaService($this->piani, $this->pianoOperatori, $this->turni, $this->assenze);
+        $this->pdf = new PianoPdfService($this->piani, $this->vista);
     }
 
     public function index(Request $request): Response
@@ -316,81 +323,69 @@ final class PianiTurnoController extends BaseController
     public function show(Request $request): Response
     {
         $id = (int) $request->param('id');
+        // Caricamento dati delegato a PianoVistaService (condiviso con la stampa
+        // PDF, sessione 8). Qui restano solo i flag di permesso, che dipendono
+        // dall'utente corrente e non sono concetto del service.
+        $vista = $this->vista->carica($id);
+        if ($vista === null) {
+            return $this->redirect('/piani-turno', 'error', 'Piano non trovato.');
+        }
+
+        $puoModificare = $this->ruoloPuoModificare();
+        $bozza = $vista['piano']['stato'] === 'bozza';
+
+        return $this->render('piani_turno/show.twig', array_merge($vista, [
+            'mesiIt'         => self::MESI_IT,
+            'puoModificare'  => $puoModificare,
+            'celleEditabili' => $puoModificare && $bozza,
+        ]));
+    }
+
+    /**
+     * Stampa PDF (A3 orizzontale) della griglia del piano. Solo piani pubblicati
+     * (spec-pdf-piano-turni §2). Download diretto, niente cache su disco.
+     */
+    public function pdf(Request $request): Response
+    {
+        $id = (int) $request->param('id');
         $piano = $this->piani->findWithSetting($id);
         if ($piano === null) {
             return $this->redirect('/piani-turno', 'error', 'Piano non trovato.');
         }
-
-        $anno = (int) $piano['anno'];
-        $mese = (int) $piano['mese'];
-        // Operatori del piano: presa esplicita da `piano_operatori`, joinata
-        // col saldo del mese (che è unico cross-setting). Include gli operatori
-        // aggiunti manualmente in itinere — anche dall'altro setting.
-        $operatoriDelPiano = $this->pianoOperatori->listInPiano($id, $anno, $mese);
-
-        // Matrice [id_operatore][YYYY-MM-DD] => turno (per cella calendario).
-        $turniByOpData = [];
-        foreach ($this->turni->listByPiano($id) as $t) {
-            $turniByOpData[(int) $t['id_operatore']][(string) $t['data']] = $t;
+        if ($piano['stato'] !== 'pubblicato') {
+            return $this->redirect(
+                "/piani-turno/{$id}",
+                'error',
+                'Il PDF è disponibile solo per i piani pubblicati.',
+            );
         }
 
-        // Matrice cross-setting: turni dei miei operatori in altri piani dello
-        // stesso mese (sessione 4-quinquies). L'UNIQUE (operatore, data) su
-        // `turni` garantisce che una stessa cella non possa avere sia un turno
-        // del piano corrente sia uno cross-setting: in caso di sovrapposizione
-        // la cella ricade nel ramo del piano corrente, l'altra è semplicemente
-        // impossibile.
-        $crossSettingByOpData = [];
-        foreach ($this->turni->listCrossSettingPerPiano($id, $anno, $mese) as $t) {
-            $crossSettingByOpData[(int) $t['id_operatore']][(string) $t['data']] = $t;
+        try {
+            $binario = $this->pdf->genera($id);
+        } catch (PianoNonStampabileException $e) {
+            // Backstop: lo stato è già stato verificato sopra; qui solo per race.
+            return $this->redirect("/piani-turno/{$id}", 'error', $e->getMessage());
         }
 
-        // Assenze attive sul mese per gli operatori del piano (sessione 5).
-        // Una sola query verso `assenze`; per cella si itera sulla lista
-        // piccola dell'operatore (di norma 0-2 record).
-        $idOperatori = array_map(static fn ($r) => (int) $r['id_operatore'], $operatoriDelPiano);
-        $primoDelMese  = sprintf('%04d-%02d-01', $anno, $mese);
-        $ultimoDelMese = (new \DateTimeImmutable($primoDelMese))->modify('last day of this month')->format('Y-m-d');
-        $assenzeByOp = [];
-        foreach ($this->assenze->listAttiveInPeriodo($idOperatori, $primoDelMese, $ultimoDelMese) as $a) {
-            $assenzeByOp[(int) $a['id_operatore']][] = $a;
-        }
+        $nomeFile = sprintf(
+            'piano-%s-%04d-%02d.pdf',
+            (string) $piano['setting_codice'],
+            (int) $piano['anno'],
+            (int) $piano['mese'],
+        );
 
-        // Operatori nascosti dalla griglia (4-sexies rivista): maternità/aspettativa
-        // che copre l'intero mese. Restano nella tabella saldi (le "ore perdute"
-        // non spariscono) ma non hanno righe assegnabili nel calendario. Il motivo
-        // (descrizione del tipo: "Maternità"/"Aspettativa") etichetta la riga saldo.
-        $motivoByOp = [];
-        foreach ($this->assenze->listEsclusioniConTipoNelMese($anno, $mese) as $r) {
-            $motivoByOp[(int) $r['id_operatore']] = (string) $r['tipo_descrizione'];
-        }
-        $nascostiGriglia = [];
-        $nascostiMotivo = [];
-        foreach ($idOperatori as $idOp) {
-            if (isset($motivoByOp[$idOp])) {
-                $nascostiGriglia[] = $idOp;
-                $nascostiMotivo[$idOp] = $motivoByOp[$idOp];
-            }
-        }
-
-        $puoModificare = $this->ruoloPuoModificare();
-        $bozza = $piano['stato'] === 'bozza';
-
-        return $this->render('piani_turno/show.twig', [
-            'piano'                => $piano,
-            'saldi'                => $operatoriDelPiano,
-            'mesiIt'               => self::MESI_IT,
-            'labelMese'            => $this->labelMese($mese, $anno),
-            'giorni'               => $this->giorniDelMese($anno, $mese),
-            'numTurni'             => $this->piani->countTurni($id),
-            'puoModificare'        => $puoModificare,
-            'celleEditabili'       => $puoModificare && $bozza,
-            'turniByOpData'        => $turniByOpData,
-            'crossSettingByOpData' => $crossSettingByOpData,
-            'assenzeByOp'          => $assenzeByOp,
-            'nascostiGriglia'      => $nascostiGriglia,
-            'nascostiMotivo'       => $nascostiMotivo,
+        Logger::get()->info('PDF piano generato', [
+            'id'      => $id,
+            'setting' => $piano['setting_codice'],
+            'anno'    => (int) $piano['anno'],
+            'mese'    => (int) $piano['mese'],
+            'bytes'   => strlen($binario),
+            'user_id' => $this->currentUserId(),
         ]);
+
+        $resp = new Response($binario, 200, 'application/pdf');
+        $resp->setHeader('Content-Disposition', 'attachment; filename="' . $nomeFile . '"');
+        return $resp;
     }
 
     /**
@@ -581,30 +576,5 @@ final class PianiTurnoController extends BaseController
     private function labelMese(int $mese, int $anno): string
     {
         return (self::MESI_IT[$mese] ?? (string) $mese) . ' ' . $anno;
-    }
-
-    /**
-     * Lista dei giorni del mese con nome breve (lun, mar, ...) e flag weekend.
-     *
-     * @return list<array{numero:int,nome:string,weekend:bool,date:string}>
-     */
-    private function giorniDelMese(int $anno, int $mese): array
-    {
-        $nomiGiorni = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
-        $primo = new \DateTimeImmutable(sprintf('%04d-%02d-01', $anno, $mese));
-        $numGiorni = (int) $primo->format('t');
-
-        $out = [];
-        for ($g = 1; $g <= $numGiorni; $g++) {
-            $d = $primo->setDate($anno, $mese, $g);
-            $dow = (int) $d->format('N'); // 1 = lun, 7 = dom
-            $out[] = [
-                'numero'  => $g,
-                'nome'    => $nomiGiorni[$dow - 1],
-                'weekend' => $dow >= 6,
-                'date'    => $d->format('Y-m-d'),
-            ];
-        }
-        return $out;
     }
 }

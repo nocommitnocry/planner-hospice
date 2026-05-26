@@ -50,6 +50,7 @@ final class PianoOperatoreModel extends BaseModel
                     o.data_cessazione  AS operatore_data_cessazione,
                     c.nome AS categoria_nome,
                     c.ordine_visualizzazione AS categoria_ordine,
+                    c.gruppo_pianificazione AS categoria_gruppo,
                     s.codice AS setting_codice,
                     s.nome   AS setting_nome,
                     sal.id                AS saldo_id,

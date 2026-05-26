@@ -36,7 +36,8 @@ final class CategorieOperatoriController extends BaseController
     public function index(Request $request): Response
     {
         return $this->render('categorie_operatori/index.twig', [
-            'categorie' => $this->model->listOrdered(),
+            'categorie'   => $this->model->listOrdered(),
+            'gruppiLabel' => CategoriaOperatoreModel::GRUPPI_LABEL,
         ]);
     }
 
@@ -46,6 +47,7 @@ final class CategorieOperatoriController extends BaseController
             'categoria' => null,
             'action'    => '/categorie-operatori',
             'titolo'    => 'Nuova categoria',
+            'gruppi'    => CategoriaOperatoreModel::GRUPPI_LABEL,
         ]);
     }
 
@@ -54,6 +56,7 @@ final class CategorieOperatoriController extends BaseController
         $input = [
             'nome'                   => $request->post('nome'),
             'descrizione'            => $request->post('descrizione'),
+            'gruppo_pianificazione'  => $request->post('gruppo_pianificazione'),
             'ordine_visualizzazione' => $request->post('ordine_visualizzazione'),
         ];
 
@@ -86,6 +89,7 @@ final class CategorieOperatoriController extends BaseController
             'categoria' => $categoria,
             'action'    => "/categorie-operatori/{$id}",
             'titolo'    => 'Modifica categoria',
+            'gruppi'    => CategoriaOperatoreModel::GRUPPI_LABEL,
         ]);
     }
 
@@ -100,6 +104,7 @@ final class CategorieOperatoriController extends BaseController
         $input = [
             'nome'                   => $request->post('nome'),
             'descrizione'            => $request->post('descrizione'),
+            'gruppo_pianificazione'  => $request->post('gruppo_pianificazione'),
             'ordine_visualizzazione' => $request->post('ordine_visualizzazione'),
         ];
 

@@ -11,9 +11,11 @@
 /storage/logs/*
 /storage/cache/*
 /storage/uploads/*
+/storage/tmp/mpdf/*
 !/storage/logs/.gitkeep
 !/storage/cache/.gitkeep
 !/storage/uploads/.gitkeep
+!/storage/tmp/mpdf/.gitkeep
 
 # Asset distribuiti (Bootstrap self-hosted) - vedi public/css/README
 # Mantenere committati: indicare qui se cambia strategia
@@ -28,6 +30,7 @@ Thumbs.db
 
 # PHPUnit
 .phpunit.result.cache
+/.phpunit.cache/
 /tests/coverage/
 
 # Backup vari

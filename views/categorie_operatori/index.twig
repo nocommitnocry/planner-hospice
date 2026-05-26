@@ -21,6 +21,7 @@
                 <tr>
                     <th class="w-5r">Ordine</th>
                     <th>Nome</th>
+                    <th>Gruppo</th>
                     <th>Descrizione</th>
                     <th class="text-end w-14r">Azioni</th>
                 </tr>
@@ -30,6 +31,13 @@
                     <tr>
                         <td>{{ c.ordine_visualizzazione }}</td>
                         <td><strong>{{ c.nome }}</strong></td>
+                        <td>
+                            {% if c.gruppo_pianificazione == 'altro' %}
+                                <span class="badge bg-secondary">{{ gruppiLabel[c.gruppo_pianificazione] }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border">{{ gruppiLabel[c.gruppo_pianificazione] }}</span>
+                            {% endif %}
+                        </td>
                         <td class="text-muted">{{ c.descrizione|default('—') }}</td>
                         <td class="text-end">
                             <a href="{{ url('/categorie-operatori/' ~ c.id ~ '/edit') }}"

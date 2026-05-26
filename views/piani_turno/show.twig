@@ -33,6 +33,10 @@
                 <a href="{{ url('/piani-turno/' ~ piano.id ~ '/delete-confirm') }}"
                    class="btn btn-outline-danger">Elimina…</a>
             {% elseif piano.stato == 'pubblicato' %}
+                <a href="{{ url('/piani-turno/' ~ piano.id ~ '/pdf') }}"
+                   class="btn btn-outline-dark" target="_blank" rel="noopener">
+                    &#x1F5A8; Stampa PDF
+                </a>
                 <form method="post" action="{{ url('/piani-turno/' ~ piano.id ~ '/unpublish') }}" class="d-inline"
                       data-confirm="Riportare il piano in bozza per correggerlo?">
                     {{ csrf_field() }}

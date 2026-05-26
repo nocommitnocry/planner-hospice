@@ -842,7 +842,7 @@ Catena reale Hospice presente: maggio (seed manuale, pubbl.) → giugno (generat
 | Schema settimanale coordinatrice (Azzurri G lun-ven) | ✅ |
 | Schemi settimanali UCP-DOM (INF→UI ven 6h, OSS→UO sab 4,25h) — scenario | ✅ |
 | Varianti da vincolo: `no_notti`→0 N, `solo_mattine`→solo M, `no_weekend`→0 turni weekend+freeze — scenario | ✅ |
-| Esclusione maternità intero mese a `store()` (Bruni Francesca UCP fuori dal piano) — scenario | ✅ |
+| Esclusione maternità intero mese a `store()` (Rossi Carla UCP fuori dal piano) — scenario | ✅ |
 | Lista "da assegnare a mano" (neoassunto senza mese precedente) — scenario | ✅ |
 | `ore_effettive`+vestizione, somma turni = `ore_lavorate`, `saldo_mese`=lavorate−dovute | ✅ |
 
@@ -989,3 +989,137 @@ Test browser di Olga (admin/caposala): **tutto ok** (2026-05-25).
 - **Badge "ritirato"** accanto a `D` nella lista admin `/tipi-turno`: proposto, non fatto (la lista admin usa `listOrdered` che mostra tutti, anche i ritirati, senza marcatore).
 - **Gap #4 (drift seed)** ancora aperto: `schema.sql` ha `Ms/Ps/Ns` minuscoli con ore base e manca `MAT`; il DB live ha `MS/PS/NS` con vestizione e `MAT`. La 0010 non lo ha toccato.
 - Tassonomia `/tipi-turno` radio Lavoro/Assenza: ancora rinviata (ora meno urgente, la separazione UI è di fatto fatta via i flag derivati).
+
+---
+
+## Sessione 8 — 2026-05-26 — Stampa PDF del piano turni
+
+Spec di riferimento: `spec-pdf-piano-turni.md`. Obiettivo: bottone «Stampa PDF»
+sui piani **pubblicati** che produce la griglia mensile su **A3 orizzontale**,
+pronta per il cartaceo (solo griglia: niente saldi, niente legenda).
+
+### Cosa è stato fatto
+
+- **Dipendenza `mpdf/mpdf:^8.2`** aggiunta a `composer.json` (require, è runtime).
+  Installata `v8.3.1` + 4 transitive (fpdi, random_compat, psr-*-shim). Risoluzione
+  pulita su PHP 8.4, **zero conflitti**. tempDir applicativa `storage/tmp/mpdf/`
+  (creata, `.gitkeep`, contenuti gitignored): la default `vendor/.../tmp` è
+  read-only in molti deploy.
+- **Migrazione `0011_categorie_gruppo_pianificazione.sql`**: nuova colonna
+  `categorie_operatori.gruppo_pianificazione ENUM('infermiere','oss','coordinatore','altro')
+  NOT NULL DEFAULT 'altro'`. Backfill per nome dei seed noti (INFERMIERE→infermiere,
+  OSS→oss, COORD./COORDINATORE/CAPOSALA→coordinatore). `schema.sql` allineato (DDL +
+  seed). **Motivo**: la tabella non aveva alcun flag semantico (solo `nome` libero +
+  `ordine_visualizzazione`); senza una colonna dedicata il raggruppamento della
+  stampa avrebbe richiesto di hardcodare i codici categoria (fragile, anti
+  multi-organizzazione — ADR 0001). Scelta confermata con Olga (alternativa scartata:
+  mappa per nome in `config/organization.php`).
+- **CRUD categorie esteso**: `CategoriaOperatoreModel` (fillable + costanti `GRUPPI`/
+  `GRUPPI_LABEL`), `CategoriaOperatoreValidator` (nuovo blocco `inSet`, vuoto→`altro`),
+  controller (`gruppo_pianificazione` aggiunto a `$input` in store **e** update — vedi
+  memoria `collect-input-completeness`), `form.twig` (select), `index.twig` (colonna
+  Gruppo con badge).
+- **Refactor `PianoVistaService`** (`src/Services/`): estratto da
+  `PianiTurnoController::show()` tutto il caricamento dati della griglia (operatori del
+  piano, matrici turni/cross-setting, assenze del mese, nascosti maternità). Consumato
+  sia da `show()` sia dalla stampa PDF — niente copia-incolla (spec §7.1/§10). Il
+  service non conosce ruoli/permessi: `puoModificare`/`celleEditabili` restano nel
+  controller. Spostati nel service anche `giorniDelMese`/`labelMese` (rimossi da `show`).
+- **`PianoPdfService`** (`src/Services/`): `genera(int $id): string` ritorna il binario
+  PDF. Valida lo stato (`assertStampabile`), carica via `PianoVistaService`, raggruppa
+  gli operatori (Infermieri→OSS→Coordinatrice→Altri, alfabetico per cognome dentro il
+  gruppo, gruppi vuoti omessi, nascosti esclusi), incorpora i colori dei tipi turno e
+  renderizza `pdf.twig` → mpdf (A3-L, margini 10mm, header/footer). Le parti pure
+  (`assertStampabile`, `raggruppa`, `render`) sono **statiche** così i test non devono
+  costruire i Model (che aprirebbero la connessione DB). Gli operatori finiti in
+  «Altri» (categoria non classificata) vengono loggati a livello INFO.
+- **Controller + rotta**: `PianiTurnoController::pdf()` + `GET /piani-turno/{id}/pdf`
+  (admin+caposala). Guardia stato→redirect con flash; risposta `application/pdf` con
+  `Content-Disposition: attachment; filename="piano-{setting}-{YYYY-MM}.pdf"`; log INFO.
+- **Template `views/piani_turno/pdf.twig`**: documento standalone (no `layout/base`),
+  CSS nel `<style>` del documento. Una `<table>` per gruppo con banda titolo + riga
+  date ripetuta. Celle in sola lettura che replicano `show.twig`: colore via classe
+  `.tt-bg-{id}` (regole iniettate nel `<style>`, **non** `style=` inline — §10), codice
+  al centro, weekend con linee laterali, cross-setting/assenza attenuati, conflitto
+  assenza con bordo rosso. `page-break-inside: avoid` su righe e intestazioni.
+- **Spazio «Note / Variazioni»** (aggiunta post-spec, richiesta di Olga 2026-05-26):
+  in fondo al calendario, **sulla stessa pagina del piano** (niente foglio a parte),
+  un riquadro delimitato di **4 righe vuote** — niente nomi, niente date, solo testo
+  libero a penna (orari équipe, prove antincendio, prelievi medicina del lavoro, ecc.).
+  In reparto le coordinatrici non vanno mai oltre le 4 righe e le vogliono a vista, non
+  su un secondo foglio. (Prima iterazione — scartata — era una seconda griglia-replica
+  su pagina nuova: troppo.) `page-break-inside: avoid` sul blocco. Verificato: 1 pagina.
+- **Bottone «🖨 Stampa PDF»** in `show.twig`, solo per piani `pubblicato` e utente
+  admin/caposala, nella barra azioni (apre in nuova scheda).
+- **Infrastruttura test creata da zero** (non esisteva): `phpunit.xml` + `tests/bootstrap.php`.
+  `tests/Unit/PianoPdfServiceTest.php` (10 test: guardie stato, raggruppamento, render→`%PDF-`)
+  e `tests/Unit/CategoriaOperatoreValidatorTest.php` (3 test). **13 test verdi, 0 DB**.
+
+### Decisioni di sessione
+
+| Punto | Scelta |
+|---|---|
+| Classificazione categoria | Colonna DB `gruppo_pianificazione` (enum) editabile dal CRUD, non match per nome hardcodato né config. DB-driven, multi-org-safe, default `altro` (nessuno scompare) |
+| Etichette gruppi | Valori enum (`infermiere`…) nel DB/validator; etichette singolari (`Infermiere`) nel CRUD (`GRUPPI_LABEL`); titoli plurali di banda (`Infermieri`) nel `PianoPdfService` (presentazione) |
+| Rendering | `mpdf` (non dompdf): A3-L nativo, tabelle larghe, UTF-8, thead ripetuto a fine pagina. HTML via Twig dedicato, non `@media print` browser |
+| Colori nel PDF | Regole `.tt-bg-{id}{background-color}` nel `<style>` del documento (rilette da `tipi_turno`), **non** `style=` inline: soddisfa §5 (colori baked, non da stylesheet dinamico) **e** §10 (CSP-safe se l'HTML intermedio finisse in un iframe) |
+| No cache su disco | Il PDF si genera a ogni click (sincrono, ~1-2s). I piani pubblicati sono mutabili via unpublish: una cache si invaliderebbe troppo facilmente (spec §10) |
+| Testabilità senza DB | `assertStampabile`/`raggruppa`/`render` statiche e pure; solo `genera()` tocca il DB. `Database` si connette nel costruttore via Container, quindi istanziare un Model in un unit test aprirebbe la connessione: le statiche lo evitano |
+| Test §9.2 (smoke HTTP) | **Rinviati**: richiedono un harness HTTP+DB di integrazione che non esiste ancora nel progetto. Costruirlo a ridosso della demo era scope a rischio. Coperto da §9.1 (unit) + verifica manuale §9.3 |
+| Ordinamento dentro il gruppo | `Collator('it_IT')` (accenti corretti) con fallback `strcasecmp` |
+
+### Verifiche fatte (questa sessione)
+
+| Cosa | Esito |
+|---|---|
+| `composer require mpdf` risoluzione | ✅ pulita (v8.3.1, 0 conflitti, PHP 8.4) |
+| `composer audit` | ⚠️ 17 advisory **preesistenti** su `twig/twig` e `phpoffice/phpspreadsheet` (alcune critiche), **non** introdotte da mpdf. Da valutare un `composer update` a parte (vedi sotto) |
+| Smoke mpdf (A3-L, UTF-8, tempDir) | ✅ `%PDF-`, accenti ok, tempDir scrivibile |
+| Unit `PianoPdfServiceTest` + `CategoriaOperatoreValidatorTest` | ✅ 13/13 |
+| `render()` con fixture realistica (2 gruppi, turno colorato, cross-setting, weekend) | ✅ PDF ~46 KB, `%PDF-` |
+| Wiring service nel container app + connessione DB | ✅ |
+| Lint PHP di tutti i file toccati | ✅ |
+
+> ⚠️ **Verifica end-to-end con dati reali NON eseguita**: la migrazione 0011 non è
+> ancora applicata al DB (il PDF reale richiede la colonna `gruppo_pianificazione`).
+> Non ho applicato la migrazione né toccato il DB col personale: spetta a Olga,
+> dopo backup. La verifica manuale §9.3 va spuntata dopo l'apply.
+
+### Da fare prima della prossima sessione (lato utente)
+
+1. **Backup del DB** (la 0011 aggiunge una colonna + backfill):
+   ```bash
+   mysqldump -u <user> -p <db> > backup-pre-0011-$(date +%Y%m%d).sql
+   ```
+2. **Applicare la migrazione**:
+   ```bash
+   mysql -u <user> -p <db> < database/migrations/0011_categorie_gruppo_pianificazione.sql
+   ```
+3. `composer install` (per scaricare mpdf su questa macchina) e `composer dump-autoload`.
+4. **Controllare la classificazione** in `/categorie-operatori`: la colonna *Gruppo*
+   deve mostrare Infermieri/OSS/Coordinatrice per i seed noti. Le categorie rimaste
+   «Altri» (badge grigio) vanno sistemate a mano nel form (es. eventuali qualifiche
+   non standard).
+5. **Verifica manuale §9.3** (su un piano **pubblicato**, admin/caposala):
+   - [ ] Hospice, mese da 31 giorni → A3, leggibile, colori ok
+   - [ ] UCP-DOM, mese da 28 giorni → spazio bianco a destra accettabile
+   - [ ] Cross-setting distinguibile dai turni "veri" (grigio/corsivo)
+   - [ ] Conflitto assenza (bordo rosso) visibile in stampa
+   - [ ] Riga date ripetuta in cima a ogni gruppo
+   - [ ] Coordinatrice in fondo; omonimie leggibili (cognome+nome)
+   - [ ] Bottone PDF assente su bozza/archiviato e per il visualizzatore (403 su URL diretto)
+6. **(Sicurezza, separato dalla spec)** Valutare `composer update twig/twig phpoffice/phpspreadsheet`
+   per le advisory preesistenti (twig: code injection `{% use %}`, critica; phpspreadsheet:
+   SSRF/RCE in `IOFactory::load`, critica). Sono dipendenze già presenti, non introdotte
+   ora; l'app usa Twig con auto-escape e non carica file Excel da input utente non fidato,
+   ma vanno aggiornate. Da fare in una finestra dedicata (test di regressione dopo l'update).
+
+### Punti aperti / rinviati (sessione 8)
+
+- **Test funzionali §9.2 (HTTP smoke)**: 200+`application/pdf` su pubblicato, 302+flash
+  su bozza, 403 per visualizzatore, nome file. Richiedono harness HTTP+DB di test:
+  prima infrastruttura di integrazione del progetto, da sessione dedicata.
+- **Log INFO «Altri» testato solo a livello di comportamento** (l'operatore finisce nel
+  gruppo `altro`): l'emissione del log vive in `genera()` (path DB) e non è coperta da unit.
+- Estensioni future segnalate dalla spec (§11) e non implementate: variante B/N, PDF per
+  singolo operatore, saldi su seconda pagina, watermark BOZZA, range multi-mese.

@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS categorie_operatori (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nome VARCHAR(50) NOT NULL UNIQUE,
     descrizione VARCHAR(255),
+    gruppo_pianificazione ENUM('infermiere', 'oss', 'coordinatore', 'altro') NOT NULL DEFAULT 'altro'
+        COMMENT 'Gruppo per il raggruppamento del piano (stampa PDF): infermiere|oss|coordinatore|altro',
     ordine_visualizzazione INT NOT NULL DEFAULT 0,
     creato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     aggiornato_il DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -377,10 +379,10 @@ INSERT INTO setting (codice, nome, descrizione, ordine_visualizzazione) VALUES
     ('hospice', 'Hospice', 'Reparto di degenza interna',           1),
     ('ucp_dom', 'UCP-DOM', 'Unità Cure Palliative Domiciliari',    2);
 
-INSERT INTO categorie_operatori (nome, descrizione, ordine_visualizzazione) VALUES
-    ('INFERMIERE', 'Personale infermieristico', 1),
-    ('OSS',        'Operatori socio-sanitari', 2),
-    ('COORD.',     'Coordinatori e caposala', 3);
+INSERT INTO categorie_operatori (nome, descrizione, gruppo_pianificazione, ordine_visualizzazione) VALUES
+    ('INFERMIERE', 'Personale infermieristico', 'infermiere',   1),
+    ('OSS',        'Operatori socio-sanitari',  'oss',          2),
+    ('COORD.',     'Coordinatori e caposala',   'coordinatore', 3);
 
 -- Ore M/P/N/G gia' comprensive della vestizione (+0,25h, decisa 2026-05-23,
 -- da confermare alla demo). D NON ha vestizione. Le ore di ASSENZA (base, senza

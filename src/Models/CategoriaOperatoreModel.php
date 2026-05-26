@@ -10,7 +10,23 @@ final class CategoriaOperatoreModel extends BaseModel
     protected array $fillable = [
         'nome',
         'descrizione',
+        'gruppo_pianificazione',
         'ordine_visualizzazione',
+    ];
+
+    /**
+     * Valori ammessi per `gruppo_pianificazione` (allineati alla ENUM della
+     * migrazione 0011) e relative etichette per la UI del CRUD categorie.
+     * Le etichette plurali usate nelle bande della stampa PDF vivono invece
+     * nel raggruppatore (PianoPdfService).
+     */
+    public const GRUPPI = ['infermiere', 'oss', 'coordinatore', 'altro'];
+
+    public const GRUPPI_LABEL = [
+        'infermiere'   => 'Infermiere',
+        'oss'          => 'OSS',
+        'coordinatore' => 'Coordinatrice',
+        'altro'        => 'Altri',
     ];
 
     /** @return list<array<string,mixed>> */

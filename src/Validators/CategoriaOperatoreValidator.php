@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace App\Validators;
 
+use App\Models\CategoriaOperatoreModel;
+
 final class CategoriaOperatoreValidator extends BaseValidator
 {
     public function validate(array $input): array
@@ -28,6 +30,17 @@ final class CategoriaOperatoreValidator extends BaseValidator
             }
         } else {
             $data['descrizione'] = null;
+        }
+
+        // Gruppo di pianificazione (migrazione 0011). Vuoto -> 'altro' (default DB):
+        // una categoria non classificata finisce nel gruppo "Altri" della stampa.
+        $gruppo = trim((string) ($input['gruppo_pianificazione'] ?? ''));
+        if ($gruppo === '') {
+            $data['gruppo_pianificazione'] = 'altro';
+        } elseif ($err = Rules::inSet($gruppo, CategoriaOperatoreModel::GRUPPI, 'Gruppo di pianificazione')) {
+            $errors['gruppo_pianificazione'][] = $err;
+        } else {
+            $data['gruppo_pianificazione'] = $gruppo;
         }
 
         $ordineRaw = $input['ordine_visualizzazione'] ?? 0;

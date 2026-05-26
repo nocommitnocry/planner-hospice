@@ -1,0 +1,163 @@
+{# Documento PDF standalone (mpdf, A3-L). NON estende layout/base.twig: niente
+   navbar/Bootstrap. Vedi spec-pdf-piano-turni §8. Tutto il CSS nel <style> del
+   documento (mpdf non scarica fogli esterni; e così resta CSP-safe, §10).
+   Una <table> per gruppo: la riga date è ripetuta in cima a ciascun gruppo.
+
+   Sotto il calendario, sulla STESSA pagina, uno spazio note delimitato di poche
+   righe vuote (niente nomi, niente date): le coordinatrici annotano a penna le
+   variazioni del mese (orari équipe, prove antincendio, prelievi, ecc.). #}
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<style>
+    body { font-family: sans-serif; color: #000; margin: 0; }
+
+    table.griglia {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        margin-bottom: 6mm;
+    }
+    table.griglia th,
+    table.griglia td {
+        border: 0.4pt solid #999;
+        padding: 1pt;
+        text-align: center;
+        vertical-align: middle;
+        overflow: hidden;
+    }
+
+    /* Banda titolo gruppo: tutta la larghezza, grigio chiaro, maiuscoletto. */
+    .gruppo-titolo {
+        background-color: #e3e6ea;
+        text-align: left;
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 9pt;
+        letter-spacing: 0.5pt;
+        padding: 2pt 4pt;
+    }
+
+    /* Prima colonna operatore. */
+    .op-col {
+        width: 48mm;
+        text-align: left;
+        padding: 1pt 3pt;
+    }
+    th.op-col { background-color: #f1f3f5; }
+    .op-nome { font-weight: bold; font-size: 8pt; line-height: 1.05; }
+    .op-cat  { color: #555; font-size: 6pt; }
+
+    /* Riga date ripetuta a inizio gruppo. */
+    .riga-date th { background-color: #f1f3f5; font-size: 6.5pt; line-height: 1.05; }
+    .dow { color: #666; text-transform: uppercase; }
+    .dom { font-weight: bold; font-size: 8pt; }
+
+    /* Celle giorno. */
+    td.cella { font-size: 8.5pt; font-weight: bold; height: 7mm; }
+    .vuoto-weekend { background-color: #f0f0f0; }
+
+    /* Weekend: linee verticali marcate ai lati (enfasi "a penna"). Sono bordi,
+       non sfondo: il colore del turno resta visibile sotto. */
+    .weekend { border-left: 1pt solid #555; border-right: 1pt solid #555; }
+
+    /* Cross-setting: operatore in prestito su un altro piano dello stesso mese.
+       Codice tenue, sfondo grigio, corsivo (attenuato rispetto ai turni "veri"). */
+    .cross { background-color: #eceef0; color: #888; font-style: italic; font-weight: normal; font-size: 7.5pt; }
+
+    /* Dentro un'assenza programmata: codice tenue corsivo. */
+    .assenza { color: #888; font-style: italic; font-weight: normal; font-size: 7.5pt; }
+
+    /* Fuori dal periodo di servizio (assunzione/cessazione): puntino tenue. */
+    .fuori { color: #c0c0c0; font-weight: normal; }
+
+    /* Conflitto: turno di lavoro che cade dentro un'assenza → bordo rosso marcato. */
+    .conflitto { border: 1.3pt solid #dc3545; }
+
+    /* Spazio note a fondo pagina: poche righe vuote delimitate per la scrittura a
+       mano. In evidenza ma sulla stessa pagina del piano (niente foglio a parte). */
+    .note-blocco { page-break-inside: avoid; margin-top: 4mm; }
+    .note-titolo { font-weight: bold; font-size: 9pt; margin-bottom: 1.5mm; }
+    table.note { width: 100%; border-collapse: collapse; }
+    table.note td { border: 0.4pt solid #999; height: 9mm; }
+
+    /* Non spezzare righe e intestazioni a cavallo di pagina (§8). */
+    table.griglia thead { display: table-header-group; }
+    table.griglia tr { page-break-inside: avoid; }
+
+    /* Colori dei tipi turno (rigenerati da tipi_turno; classi .tt-bg-{id}). */
+{{ coloriCss|raw }}
+</style>
+</head>
+<body>
+
+{% for gruppo in gruppi %}
+    <table class="griglia">
+        <thead>
+            <tr>
+                <th colspan="{{ giorni|length + 1 }}" class="gruppo-titolo">{{ gruppo.titolo|upper }}</th>
+            </tr>
+            <tr class="riga-date">
+                <th class="op-col">&nbsp;</th>
+                {% for g in giorni %}
+                    <th class="{% if g.weekend %}weekend{% endif %}">
+                        <div class="dow">{{ g.nome }}</div>
+                        <div class="dom">{{ g.numero }}</div>
+                    </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for op in gruppo.operatori %}
+                <tr>
+                    <td class="op-col">
+                        <div class="op-nome">{{ op.operatore_cognome }} {{ op.operatore_nome }}</div>
+                        <div class="op-cat">{{ op.categoria_nome }}</div>
+                    </td>
+                    {% for g in giorni %}
+                        {% set turno = turniByOpData[op.id_operatore][g.date] ?? null %}
+                        {% set cross = (not turno) ? (crossSettingByOpData[op.id_operatore][g.date] ?? null) : null %}
+                        {% set primaAssunzione = op.operatore_data_assunzione and g.date < op.operatore_data_assunzione %}
+                        {% set dopoCessazione  = op.operatore_data_cessazione and g.date > op.operatore_data_cessazione %}
+                        {% set fuoriFinestra = (not turno) and (not cross) and (primaAssunzione or dopoCessazione) %}
+                        {% set assenzaCorrente = null %}
+                        {% for a in assenzeByOp[op.id_operatore] | default([]) %}
+                            {% if assenzaCorrente is null and a.data_inizio <= g.date and a.data_fine >= g.date %}
+                                {% set assenzaCorrente = a %}
+                            {% endif %}
+                        {% endfor %}
+                        {% set inAssenzaVuota = (not turno) and (not cross) and (not fuoriFinestra) and assenzaCorrente %}
+                        {% set conflittoAssenza = turno and assenzaCorrente and not turno.tipo_is_assenza %}
+                        {% set base = 'cella' ~ (g.weekend ? ' weekend' : '') %}
+                        {% if cross %}
+                            <td class="{{ base }} cross">{{ cross.tipo_codice }}</td>
+                        {% elseif fuoriFinestra %}
+                            <td class="{{ base }} fuori">&middot;</td>
+                        {% elseif inAssenzaVuota %}
+                            <td class="{{ base }} assenza">{{ assenzaCorrente.tipo_codice }}</td>
+                        {% elseif turno %}
+                            <td class="{{ base }} tt-bg-{{ turno.id_tipo_turno }}{% if conflittoAssenza %} conflitto{% endif %}">{{ turno.tipo_codice }}</td>
+                        {% else %}
+                            <td class="{{ base }}{% if g.weekend %} vuoto-weekend{% endif %}">&nbsp;</td>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endfor %}
+
+{# Spazio note a mano (stessa pagina, in fondo): righe vuote delimitate, senza
+   nomi né date — testo libero (orari équipe, prove antincendio, prelievi, ...). #}
+<div class="note-blocco">
+    <div class="note-titolo">Note / Variazioni</div>
+    <table class="note">
+        {% for i in 1..4 %}
+            <tr><td>&nbsp;</td></tr>
+        {% endfor %}
+    </table>
+</div>
+
+</body>
+</html>
